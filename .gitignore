@@ -1,0 +1,14 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Local development data and backups
+server.ts.backup-ai
+src/*.backup*
+system_config.json
+user_notes.json
