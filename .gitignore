@@ -12,3 +12,4 @@ server.ts.backup-ai
 src/*.backup*
 system_config.json
 user_notes.json
+.vercel
