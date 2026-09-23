@@ -61,6 +61,12 @@ export interface UserNote {
   fileUrl?: string;
   fileName?: string;
   fileSize?: number;
+
+  // Universal vault metadata - all optional.
+  noteType?: string;
+  tags?: string[];
+  language?: string;
+  sourceType?: string;
 }
 
 export interface SimulatorState {

@@ -13,3 +13,5 @@ src/*.backup*
 system_config.json
 user_notes.json
 .vercel
+
+uploads/

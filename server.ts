@@ -248,7 +248,11 @@ app.post("/api/notes", async (req, res) => {
       uploaderEmail,
       fileData,
       fileName,
-      fileSize 
+      fileSize,
+      noteType,
+      tags,
+      language,
+      sourceType 
     } = req.body;
     
     // Resolve content - if a file is uploaded but no text content is provided,
@@ -295,7 +299,11 @@ app.post("/api/notes", async (req, res) => {
       uploaderRole: uploaderRole || "Student",
       uploaderEmail: uploaderEmail || "",
       uploadedAt: new Date().toISOString(),
-      likes: 0
+      likes: 0,
+      noteType: noteType || "General",
+      tags: Array.isArray(tags) ? tags : [],
+      language: language || "",
+      sourceType: sourceType || (fileName ? "File Upload" : "Typed Note")
     };
 
     if (fileUrl) {
@@ -418,7 +426,11 @@ app.put("/api/notes/:id", async (req, res) => {
     uploaderEmail,
     fileUrl,
     fileName,
-    fileSize
+    fileSize,
+    noteType,
+    tags,
+    language,
+    sourceType
   } = req.body;
   let updated = false;
 
@@ -434,6 +446,10 @@ app.put("/api/notes/:id", async (req, res) => {
   if (fileUrl !== undefined) updateFields.fileUrl = fileUrl;
   if (fileName !== undefined) updateFields.fileName = fileName;
   if (fileSize !== undefined) updateFields.fileSize = fileSize;
+  if (noteType !== undefined) updateFields.noteType = noteType;
+  if (tags !== undefined) updateFields.tags = Array.isArray(tags) ? tags : [];
+  if (language !== undefined) updateFields.language = language;
+  if (sourceType !== undefined) updateFields.sourceType = sourceType;
 
   if (useFirestore && db) {
     try {

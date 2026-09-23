@@ -69,8 +69,12 @@ export default function App() {
   // Upload Form Inputs (Auto-filled if logged in)
   const [newNoteTitle, setNewNoteTitle] = useState<string>("");
   const [newNoteContent, setNewNoteContent] = useState<string>("");
-  const [newNoteSubject, setNewNoteSubject] = useState<UniversalSubject>(UNIVERSAL_SUBJECTS[0]);
+  const [newNoteSubject, setNewNoteSubject] = useState<string>("");
   const [newNoteTopicName, setNewNoteTopicName] = useState<string>("");
+  const [newNoteType, setNewNoteType] = useState<string>("");
+  const [newNoteTags, setNewNoteTags] = useState<string>("");
+  const [newNoteLanguage, setNewNoteLanguage] = useState<string>("");
+  const [newNoteSourceType, setNewNoteSourceType] = useState<string>("");
   const [newNoteUploaderName, setNewNoteUploaderName] = useState<string>("");
   const [newNoteUploaderRole, setNewNoteUploaderRole] = useState<string>("Student");
   const [newNoteUploaderEmail, setNewNoteUploaderEmail] = useState<string>("");
@@ -275,12 +279,19 @@ export default function App() {
     const payload: any = {
       title: newNoteTitle,
       content: newNoteContent,
-      subjectName: newNoteSubject.name,
-      subjectCode: newNoteSubject.code,
-      topicName: newNoteTopicName || "General Study Guide",
+      subjectName: newNoteSubject.trim() || "General",
+      subjectCode: "GEN-ACAD",
+      topicName: newNoteTopicName.trim() || "General Study Guide",
       uploaderName: newNoteUploaderName,
       uploaderRole: newNoteUploaderRole,
-      uploaderEmail: newNoteUploaderEmail
+      uploaderEmail: newNoteUploaderEmail,
+      noteType: newNoteType.trim() || "General",
+      tags: newNoteTags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+      language: newNoteLanguage.trim(),
+      sourceType: newNoteSourceType.trim() || (attachedFileName ? "File Upload" : "Typed Note")
     };
 
     if (attachedFileData && attachedFileName) {
@@ -310,26 +321,38 @@ export default function App() {
         setAttachedFileSize(0);
         setShowUploadForm(false);
       } else {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to upload note");
+        let errorMessage = "Failed to publish note to the Vault.";
+        try {
+          const errorData = await res.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          // Keep the generic message if the server did not return JSON.
+        }
+
+        console.error("Vault rejected note:", res.status, errorMessage);
+        showToast(`Vault error: ${errorMessage}`, "error");
       }
     } catch (err: any) {
-      console.error("Upload note error:", err);
-      // Fallback
+      console.error("Upload note network error:", err);
+
+      // Only use the local fallback when the server cannot be reached.
+      // HTTP/API errors are handled above and are not treated as successful saves.
       const offlineNote: UserNote = {
         id: "offline-" + Date.now(),
         ...payload,
         uploadedAt: new Date().toISOString(),
         likes: 0
       };
+
       if (attachedFileName) {
         offlineNote.fileName = attachedFileName;
         offlineNote.fileUrl = "javascript:void(0)";
         offlineNote.fileSize = attachedFileSize;
       }
+
       setUserNotes(prev => [offlineNote, ...prev]);
-      showToast("Note saved locally (Server unreachable)", "success");
-      
+      showToast("Server unreachable. Note saved locally.", "success");
+
       setAttachedFileData("");
       setAttachedFileName("");
       setAttachedFileSize(0);
@@ -1010,24 +1033,20 @@ ${note.content}
                       </div>
                     </div>
 
-                    {/* Subject catalog assignment */}
+                    {/* Universal subject / topic assignment */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <label className="block font-bold uppercase">Target Subject Syllabus *</label>
-                        <select
-                          value={newNoteSubject.name}
-                          onChange={(e) => {
-                            const found = UNIVERSAL_SUBJECTS.find(s => s.name === e.target.value);
-                            if (found) setNewNoteSubject(found);
-                          }}
-                          className="w-full p-2 border border-black bg-neutral-50"
-                        >
-                          {UNIVERSAL_SUBJECTS.map((subject) => (
-                            <option key={subject.code} value={subject.name}>
-                              {subject.name} ({subject.code})
-                            </option>
-                          ))}
-                        </select>
+                        <label className="block font-bold uppercase">Subject / Course</label>
+                        <input
+                          type="text"
+                          placeholder="e.g., Data Structures, Biology, Python, History, Personal Notes"
+                          value={newNoteSubject}
+                          onChange={(e) => setNewNoteSubject(e.target.value)}
+                          className="w-full p-2 border border-black font-sans bg-neutral-50"
+                        />
+                        <p className="text-xs text-neutral-600">
+                          Enter any subject, course, field, or category. Leave blank for General.
+                        </p>
                       </div>
 
                       <div className="space-y-1">
@@ -1038,7 +1057,62 @@ ${note.content}
                           value={newNoteTopicName}
                           onChange={(e) => setNewNoteTopicName(e.target.value)}
                           className="w-full p-2 border border-black font-sans bg-neutral-50"
-                          required
+                        />
+                        <p className="text-xs text-neutral-600">
+                          Optional. Use this for a chapter, topic, module, or any useful context.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Universal note metadata */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="block font-bold uppercase">Note Type / Category</label>
+                        <input
+                          type="text"
+                          placeholder="e.g., Lecture, Revision, Research, Project, Personal"
+                          value={newNoteType}
+                          onChange={(e) => setNewNoteType(e.target.value)}
+                          className="w-full p-2 border border-black font-sans bg-neutral-50"
+                        />
+                        <p className="text-xs text-neutral-600">
+                          Optional. Use any category you want.
+                        </p>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block font-bold uppercase">Tags</label>
+                        <input
+                          type="text"
+                          placeholder="e.g., arrays, algorithms, exam, important"
+                          value={newNoteTags}
+                          onChange={(e) => setNewNoteTags(e.target.value)}
+                          className="w-full p-2 border border-black font-sans bg-neutral-50"
+                        />
+                        <p className="text-xs text-neutral-600">
+                          Optional. Separate multiple tags with commas.
+                        </p>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block font-bold uppercase">Language</label>
+                        <input
+                          type="text"
+                          placeholder="e.g., English, Hindi, Marathi, C++, Python"
+                          value={newNoteLanguage}
+                          onChange={(e) => setNewNoteLanguage(e.target.value)}
+                          className="w-full p-2 border border-black font-sans bg-neutral-50"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block font-bold uppercase">Source / Origin</label>
+                        <input
+                          type="text"
+                          placeholder="e.g., Self Written, College Lecture, Book, Website"
+                          value={newNoteSourceType}
+                          onChange={(e) => setNewNoteSourceType(e.target.value)}
+                          className="w-full p-2 border border-black font-sans bg-neutral-50"
                         />
                       </div>
                     </div>
