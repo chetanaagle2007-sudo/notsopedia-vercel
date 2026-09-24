@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+﻿import React, { useState, useEffect, useRef } from "react";
 import pptxgen from "pptxgenjs";
 import { 
   BookOpen, 
@@ -95,7 +95,7 @@ export default function App() {
   }>>([
     {
       sender: "ai",
-      text: "👋 Welcome to Notsopedia Live AI Search! I can answer *any question in the world* with real-time news grounding or analyze your peer notes library directly. Ask me anything!",
+      text: "ðŸ‘‹ Welcome to Notsopedia Live AI Search! I can answer *any question in the world* with real-time news grounding or analyze your peer notes library directly. Ask me anything!",
       timestamp: new Date().toLocaleTimeString()
     }
   ]);
@@ -108,7 +108,7 @@ export default function App() {
     announcementActive: boolean;
     enableSubmissions: boolean;
   }>({
-    announcement: "🎓 Welcome to the new Notsopedia Universal Hub! Download community notes, access the Live AI Search, and share research notes permanently.",
+    announcement: "ðŸŽ“ Welcome to the new Notsopedia Universal Hub! Download community notes, access the Live AI Search, and share research notes permanently.",
     announcementActive: true,
     enableSubmissions: true
   });
@@ -533,7 +533,7 @@ export default function App() {
         ...prev,
         {
           sender: "ai",
-          text: "⚠️ Offline academic discovery engine connection failed. Please check that the server is currently reachable and try again.",
+          text: "âš ï¸ Offline academic discovery engine connection failed. Please check that the server is currently reachable and try again.",
           timestamp: new Date().toLocaleTimeString()
         }
       ]);
@@ -625,7 +625,7 @@ export default function App() {
       slide1.addText("Universal Collaborative Lectures, Research Digests & AI Material", {
         x: 1.0, y: 3.2, w: 11.3, h: 0.5, fontSize: 16, fontFace: "Arial", color: "444444"
       });
-      slide1.addText(`Exported on: ${new Date().toLocaleDateString()} • Free Study License`, {
+      slide1.addText(`Exported on: ${new Date().toLocaleDateString()} â€¢ Free Study License`, {
         x: 1.0, y: 4.8, w: 11.3, h: 0.4, fontSize: 12, fontFace: "Courier New", color: "141414", bold: true
       });
       slide1.addShape("rect", { x: 0, y: 7.0, w: 13.33, h: 0.5, fill: { color: "141414" } });
@@ -635,7 +635,7 @@ export default function App() {
         const slide = pres.addSlide();
         slide.background = { color: "FFFFFF" };
         
-        slide.addText(`TOPIC BLUEPRINT • MODULE ${index + 1}`, {
+        slide.addText(`TOPIC BLUEPRINT â€¢ MODULE ${index + 1}`, {
           x: 0.8, y: 0.4, w: 11.7, h: 0.3, fontSize: 10, fontFace: "Courier New", color: "666666", bold: true
         });
 
@@ -670,12 +670,31 @@ export default function App() {
     }
   };
 
-  // Helper to trigger instant note file download as Markdown
+  // Universal note download:
+  // - Uploaded files are downloaded in their original format.
+  // - Typed notes are exported as Markdown with the complete note content.
   const handleDownloadNoteMarkdown = (note: UserNote) => {
-    const header = `---
+    if (note.fileUrl && note.fileName) {
+      const link = document.createElement("a");
+      link.href = note.fileUrl;
+      link.setAttribute("download", note.fileName);
+      link.target = "_blank";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      showToast(`Downloading "${note.fileName}"...`, "success");
+      return;
+    }
+
+    const markdown = `---
 title: ${note.title}
-subject: ${note.subjectName} (${note.subjectCode})
-topic: ${note.topicName}
+subject: ${note.subjectName || "General"}${note.subjectCode ? ` (${note.subjectCode})` : ""}
+topic: ${note.topicName || "General Study Guide"}
+note_type: ${note.noteType || "General"}
+tags: ${(note.tags || []).join(", ")}
+language: ${note.language || ""}
+source_type: ${note.sourceType || "Typed Note"}
 uploader: ${note.uploaderName} (${note.uploaderRole})
 uploaded_at: ${note.uploadedAt}
 likes: ${note.likes}
@@ -684,22 +703,35 @@ source: Notsopedia Universal Archives
 
 # ${note.title}
 
-${note.content}
+${note.content || "No text content was provided."}
 
 ---
-*Document retrieved permanently from Notsopedia Firestore database on ${new Date().toLocaleDateString()}.*
+
+*Document retrieved from Notsopedia Universal Vault on ${new Date().toLocaleDateString()}.*
+
 `;
-    const blob = new Blob([header], { type: "text/markdown;charset=utf-8;" });
+
+    const blob = new Blob([markdown], {
+      type: "text/markdown;charset=utf-8"
+    });
+
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
+
     link.href = url;
-    link.setAttribute("download", `${note.title.toLowerCase().replace(/[^a-z0-9]+/g, "_")}.md`);
+    link.setAttribute(
+      "download",
+      `${note.title.toLowerCase().replace(/[^a-z0-9]+/g, "_") || "notsopedia_note"}.md`
+    );
+
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast(`Successfully downloaded "${note.title}" as Markdown!`, "success");
-  };
 
+    URL.revokeObjectURL(url);
+
+    showToast(`Successfully downloaded "${note.title}" with complete note content!`, "success");
+  };
   // Filter notes based on category & queries
   const filteredNotes = userNotes.filter(note => {
     const matchesSearch = 
@@ -743,7 +775,7 @@ ${note.content}
             className="text-white hover:bg-white/10 px-1.5 py-0.5 rounded ml-3 shrink-0 transition"
             title="Dismiss Announcement"
           >
-            ✕
+            âœ•
           </button>
         </div>
       )}
@@ -764,7 +796,7 @@ ${note.content}
               <span className="bg-slate-100 text-slate-700 text-[8px] font-mono font-bold uppercase px-1.5 py-0.5 tracking-wider leading-none rounded">universal</span>
             </div>
             <p className="text-[8px] font-mono tracking-widest uppercase text-slate-400 mt-0.5">
-              COLLABORATIVE STUDY VAULT • SECURED FIRESTORE
+              COLLABORATIVE STUDY VAULT â€¢ SECURED FIRESTORE
             </p>
           </div>
         </div>
@@ -828,7 +860,7 @@ ${note.content}
               <Clock className="h-2.5 w-2.5" />
               <span>{currentTime || "00:00:00 UTC"}</span>
             </div>
-            <div className="text-[8px] font-bold text-emerald-600">LIVE SYNC 🟢</div>
+            <div className="text-[8px] font-bold text-emerald-600">LIVE SYNC ðŸŸ¢</div>
           </div>
 
           {/* Profile Connector Dual Login */}
@@ -849,7 +881,7 @@ ${note.content}
                       className="text-xs font-bold text-slate-800 hover:text-emerald-700 max-w-[110px] truncate flex items-center gap-1"
                       title="Click to edit profile"
                     >
-                      <span className="truncate">👤 {signedInUser.name}</span>
+                      <span className="truncate">ðŸ‘¤ {signedInUser.name}</span>
                       <Edit3 className="h-2.5 w-2.5 text-slate-400 inline shrink-0" />
                     </button>
                   </div>
@@ -894,7 +926,7 @@ ${note.content}
             <div className="bg-white border border-slate-200/80 rounded-2xl p-8 md:p-12 shadow-sm flex flex-col items-center justify-center text-center space-y-6 max-w-3xl mx-auto w-full transition-all hover:shadow-md">
               <div className="space-y-2">
                 <span className="bg-emerald-50 text-emerald-700 font-mono text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full border border-emerald-200">
-                  ⚡ Standalone Notsopedia AI & Cloud Firestore
+                  âš¡ Standalone Notsopedia AI & Cloud Firestore
                 </span>
                 <h2 className="text-3xl md:text-4xl font-serif font-black tracking-tight text-slate-900 italic pt-1">
                   Notsopedia Universal Search
@@ -950,7 +982,7 @@ ${note.content}
                 >
                   <Plus className="h-3.5 w-3.5" /> Upload Note
                 </button>
-                <span className="text-slate-300">•</span>
+                <span className="text-slate-300">â€¢</span>
                 <button
                   onClick={handleDownloadPPTX}
                   disabled={isGeneratingPPTX || userNotes.length === 0}
@@ -959,7 +991,7 @@ ${note.content}
                 >
                   <FileText className="h-3.5 w-3.5 text-slate-500" /> Download Deck PPTX
                 </button>
-                <span className="text-slate-300">•</span>
+                <span className="text-slate-300">â€¢</span>
                 <button
                   onClick={() => setActiveTab("ai-tutor")}
                   className="text-slate-700 hover:text-emerald-700 hover:underline font-bold flex items-center gap-1 transition"
@@ -985,7 +1017,7 @@ ${note.content}
                       onClick={() => setShowUploadForm(false)}
                       className="font-black text-sm border-2 border-black hover:bg-neutral-100 p-1 bg-[#E4E3E0]"
                     >
-                      ✕ Close
+                      âœ• Close
                     </button>
                   </div>
 
@@ -1213,7 +1245,7 @@ ${note.content}
                         disabled={isSubmittingNote}
                         className="px-5 py-2 bg-[#10b981] text-black font-bold uppercase border-2 border-black shadow-[3px_3px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] disabled:bg-neutral-300"
                       >
-                        {isSubmittingNote ? "Saving Note Permanently..." : "Publish to Vault 🚀"}
+                        {isSubmittingNote ? "Saving Note Permanently..." : "Publish to Vault ðŸš€"}
                       </button>
                     </div>
 
@@ -1275,7 +1307,7 @@ ${note.content}
                         {/* Meta Category info */}
                         <div className="flex items-center space-x-2 text-[10px] text-slate-500 font-mono">
                           <span className="font-bold uppercase text-[9px] border border-slate-200 px-1.5 py-0.5 bg-slate-50 rounded text-slate-700">{note.subjectName}</span>
-                          <span className="truncate max-w-[120px]">• {note.topicName}</span>
+                          <span className="truncate max-w-[120px]">â€¢ {note.topicName}</span>
                         </div>
 
                         {/* Short body teaser */}
@@ -1317,7 +1349,7 @@ ${note.content}
                         
                         {/* Uploader Meta */}
                         <div className="text-[10px] text-slate-500 max-w-[130px] truncate leading-tight">
-                          <span className="block font-bold truncate text-slate-700">👤 {note.uploaderName}</span>
+                          <span className="block font-bold truncate text-slate-700">ðŸ‘¤ {note.uploaderName}</span>
                           <span className="block uppercase text-[8px] font-bold text-slate-400 mt-0.5">{note.uploaderRole}</span>
                         </div>
 
@@ -1428,7 +1460,7 @@ ${note.content}
                         onClick={() => setViewingNote(null)}
                         className="font-black hover:bg-black/10 px-1.5 py-0.5 rounded border border-black"
                       >
-                        ✕ Close
+                        âœ• Close
                       </button>
                     </div>
                   </div>
@@ -1483,7 +1515,7 @@ ${note.content}
 
                     {/* Sign-off footer */}
                     <div className="pt-8 mt-8 border-t border-black/10 font-mono text-[10px] text-neutral-500 text-center">
-                      Verified Cloud Firestore Data Block • Saved as UTF-8 Encoded Study Resource
+                      Verified Cloud Firestore Data Block â€¢ Saved as UTF-8 Encoded Study Resource
                     </div>
 
                   </div>
@@ -1518,7 +1550,7 @@ ${note.content}
                       onClick={() => setEditingNote(null)}
                       className="font-black text-sm border border-black p-1 bg-neutral-100"
                     >
-                      ✕ Cancel
+                      âœ• Cancel
                     </button>
                   </div>
 
@@ -1581,7 +1613,7 @@ ${note.content}
                         type="submit"
                         className="px-5 py-2 bg-amber-400 text-black font-extrabold uppercase border border-black shadow-[2px_2px_0px_rgba(0,0,0,1)] hover:shadow-[3px_3px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px]"
                       >
-                        Commit Overrides 🔒
+                        Commit Overrides ðŸ”’
                       </button>
                     </div>
 
@@ -1681,7 +1713,7 @@ ${note.content}
                   <div className="space-y-2 font-mono text-[10px] leading-relaxed">
                     <div className="flex justify-between">
                       <span className="opacity-70">LAST 24H STATUS:</span>
-                      <span className="text-emerald-400 font-bold">OPTIMIZED ✔</span>
+                      <span className="text-emerald-400 font-bold">OPTIMIZED âœ”</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="opacity-70">AI RE-INDEXING:</span>
@@ -1716,7 +1748,7 @@ ${note.content}
                 <div className="flex items-center space-x-2">
                   <Sparkles className="h-4 w-4 text-emerald-600" />
                   <span className="font-bold text-slate-800">
-                    {aiMode === "news-gk" ? "Live Web Search Mode 🌐" : aiMode === "notes-expert" ? "Academic Library Mode 📚" : "Syllabus Grader Mode 🎓"}
+                    {aiMode === "news-gk" ? "Live Web Search Mode ðŸŒ" : aiMode === "notes-expert" ? "Academic Library Mode ðŸ“š" : "Syllabus Grader Mode ðŸŽ“"}
                   </span>
                 </div>
                 <div className="text-[9px] font-bold text-slate-400 hidden sm:block">
@@ -1735,7 +1767,7 @@ ${note.content}
                   >
                     {/* Timestamp & label */}
                     <span className="text-[11px] text-slate-400 font-mono mb-1.5">
-                      {msg.sender === "user" ? "You" : "Notsopedia AI"} • {msg.timestamp}
+                      {msg.sender === "user" ? "You" : "Notsopedia AI"} â€¢ {msg.timestamp}
                     </span>
 
                     {/* Balloon body */}
@@ -1749,7 +1781,7 @@ ${note.content}
                       {/* Display search grounded citations sources */}
                       {msg.sources && msg.sources.length > 0 && (
                         <div className="mt-4 pt-3 border-t border-slate-200/60 text-[11px] font-mono text-slate-500">
-                          <span className="block font-bold mb-1.5 text-slate-600">🔍 Live Search References:</span>
+                          <span className="block font-bold mb-1.5 text-slate-600">ðŸ” Live Search References:</span>
                           <div className="flex flex-wrap gap-2">
                             {msg.sources.slice(0, 4).map((src, sIdx) => (
                               <a
@@ -1837,7 +1869,7 @@ ${note.content}
               <div className="shrink-0 flex items-center gap-3">
                 {signedInUser && signedInUser.isAdmin ? (
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 text-emerald-800 font-mono text-xs font-bold uppercase text-center">
-                    🔒 Credentials Authenticated
+                    ðŸ”’ Credentials Authenticated
                   </div>
                 ) : (
                   <button
@@ -1847,7 +1879,7 @@ ${note.content}
                     }}
                     className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-sans text-xs font-bold uppercase rounded-xl transition shadow-sm"
                   >
-                    Unlock console authority 🔑
+                    Unlock console authority ðŸ”‘
                   </button>
                 )}
               </div>
@@ -1903,7 +1935,7 @@ ${note.content}
                       disabled={isSavingConfig}
                       className="px-3.5 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-sans font-bold uppercase tracking-wider hover:bg-slate-800 transition"
                     >
-                      Update Banner 📣
+                      Update Banner ðŸ“£
                     </button>
                   </div>
 
@@ -1921,7 +1953,7 @@ ${note.content}
                           systemConfig.enableSubmissions ? "bg-emerald-600 text-white shadow-sm" : "bg-rose-600 text-white shadow-sm"
                         }`}
                       >
-                        {systemConfig.enableSubmissions ? "Open ✔" : "Locked 🔒"}
+                        {systemConfig.enableSubmissions ? "Open âœ”" : "Locked ðŸ”’"}
                       </button>
                     </div>
                   </div>
@@ -1955,7 +1987,7 @@ ${note.content}
                       </h3>
                     </div>
                     <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded text-[9px] font-mono font-bold">
-                      SHIELD: ACTIVE 🛡️
+                      SHIELD: ACTIVE ðŸ›¡ï¸
                     </span>
                   </div>
 
@@ -1967,7 +1999,7 @@ ${note.content}
                     </div>
                     <div className="bg-white/5 border border-white/5 p-2 rounded-xl">
                       <span className="block text-slate-400 uppercase text-[8px]">No Manual Work:</span>
-                      <span className="text-emerald-400 font-bold">PERFECT ✔</span>
+                      <span className="text-emerald-400 font-bold">PERFECT âœ”</span>
                     </div>
                   </div>
 
@@ -1975,7 +2007,7 @@ ${note.content}
                   <div className="bg-black/40 border border-white/5 p-3 h-44 overflow-y-auto font-mono text-[9.5px] leading-relaxed text-slate-300 space-y-1.5 scrollbar-thin rounded-xl">
                     {securityLogs.map((log, lIdx) => (
                       <div key={lIdx} className="border-b border-white/5 pb-1">
-                        <span className="text-emerald-400 mr-1.5">❯</span>
+                        <span className="text-emerald-400 mr-1.5">â¯</span>
                         <span>{log}</span>
                       </div>
                     ))}
@@ -2007,7 +2039,7 @@ ${note.content}
       <footer className="bg-[#E4E3E0] border-t-2 border-black p-5 text-center mt-12 shrink-0 font-mono text-[10px] text-neutral-600">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <div>
-            Notsopedia Study Vault © 2026 • Created for Global Collaborative Education.
+            Notsopedia Study Vault Â© 2026 â€¢ Created for Global Collaborative Education.
           </div>
           <div className="flex items-center space-x-4">
             <span>Server Proxy: <strong>Express JS</strong></span>
@@ -2032,7 +2064,7 @@ ${note.content}
                 onClick={() => setShowSignInModal(false)}
                 className="font-black text-sm hover:bg-neutral-100 p-1"
               >
-                ✕
+                âœ•
               </button>
             </div>
 
@@ -2119,7 +2151,7 @@ ${note.content}
                 // Admin credentials passcode fields
                 <div className="space-y-3">
                   <p className="text-[11px] text-amber-900 leading-normal font-sans bg-amber-50 p-2.5 border border-amber-300">
-                    ⚠️ Authorized system administrators gain command console authority to broadcast custom notices, lockdown submissions, and moderation rights.
+                    âš ï¸ Authorized system administrators gain command console authority to broadcast custom notices, lockdown submissions, and moderation rights.
                   </p>
                   
                   <div className="space-y-1">
@@ -2152,7 +2184,7 @@ ${note.content}
                     signInIsAdmin ? "bg-amber-400 text-black font-extrabold" : "bg-[#10b981] text-black"
                   }`}
                 >
-                  {signInIsAdmin ? "Unlock Admin 🔓" : "Secure Connection 👤"}
+                  {signInIsAdmin ? "Unlock Admin ðŸ”“" : "Secure Connection ðŸ‘¤"}
                 </button>
               </div>
             </form>
@@ -2163,6 +2195,7 @@ ${note.content}
     </div>
   );
 }
+
 
 
 
