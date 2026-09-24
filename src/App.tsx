@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from "react";
+import { supabase } from "./supabase";
 import pptxgen from "pptxgenjs";
 import { 
   BookOpen, 
@@ -265,6 +266,7 @@ export default function App() {
   // Handle addition of a note (Student / Professor upload)
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!systemConfig.enableSubmissions) {
       showToast("Note submissions are currently locked down by the administrator.", "error");
       return;
@@ -276,6 +278,7 @@ export default function App() {
     }
 
     setIsSubmittingNote(true);
+
     const payload: any = {
       title: newNoteTitle,
       content: newNoteContent,
@@ -294,10 +297,46 @@ export default function App() {
       sourceType: newNoteSourceType.trim() || (attachedFileName ? "File Upload" : "Typed Note")
     };
 
+    // Upload attached files to persistent Supabase Storage.
     if (attachedFileData && attachedFileName) {
-      payload.fileData = attachedFileData;
-      payload.fileName = attachedFileName;
-      payload.fileSize = attachedFileSize;
+      try {
+        const response = await fetch(attachedFileData);
+        const fileBlob = await response.blob();
+
+        const safeFileName = attachedFileName.replace(/[^\w.\-() ]/g, "_");
+        const storagePath = `${Date.now()}-${safeFileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("notsopedia")
+          .upload(storagePath, fileBlob, {
+            contentType: fileBlob.type || "application/octet-stream",
+            upsert: false
+          });
+
+        if (uploadError) {
+          throw uploadError;
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from("notsopedia")
+          .getPublicUrl(storagePath);
+
+        if (!publicUrlData?.publicUrl) {
+          throw new Error("Supabase did not return a public file URL.");
+        }
+
+        payload.fileUrl = publicUrlData.publicUrl;
+        payload.fileName = attachedFileName;
+        payload.fileSize = attachedFileSize;
+      } catch (storageError) {
+        console.error("Supabase Storage upload failed:", storageError);
+        showToast(
+          "File upload to Supabase Storage failed. Note was not published.",
+          "error"
+        );
+        setIsSubmittingNote(false);
+        return;
+      }
     }
 
     try {
@@ -311,8 +350,8 @@ export default function App() {
         const createdNote = await res.json();
         setUserNotes(prev => [createdNote, ...prev]);
         showToast("Success! Your academic note is stored permanently in Firestore.", "success");
-        
-        // Reset inputs
+
+        // Reset inputs.
         setNewNoteTitle("");
         setNewNoteContent("");
         setNewNoteTopicName("");
@@ -335,8 +374,6 @@ export default function App() {
     } catch (err: any) {
       console.error("Upload note network error:", err);
 
-      // Only use the local fallback when the server cannot be reached.
-      // HTTP/API errors are handled above and are not treated as successful saves.
       const offlineNote: UserNote = {
         id: "offline-" + Date.now(),
         ...payload,
@@ -371,6 +408,8 @@ export default function App() {
       console.warn("Error incrementing like on Firestore", err);
     }
   };
+
+
 
   // Administrator deletion rights
   const handleDeleteNote = async (id: string) => {
@@ -1379,7 +1418,7 @@ ${note.content || "No text content was provided."}
                           <button
                             onClick={() => handleDownloadNoteMarkdown(note)}
                             className="p-1.5 border border-slate-200 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 rounded-lg font-bold transition-all"
-                            title="Download as Markdown"
+                            title={note.fileUrl && note.fileName ? "Download Original File" : "Download Note as Markdown"}
                           >
                             <Download className="h-3 w-3 text-emerald-700" />
                           </button>
@@ -2195,8 +2234,4 @@ ${note.content || "No text content was provided."}
     </div>
   );
 }
-
-
-
-
 

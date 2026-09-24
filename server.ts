@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import fs from "fs";
@@ -8,7 +8,7 @@ import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, updateDoc, w
 // Load environment variables
 dotenv.config();
 
-console.log("🔑 [SYSTEM CONFIG] Standalone Server Initialized.");
+console.log("ðŸ”‘ [SYSTEM CONFIG] Standalone Server Initialized.");
 
 const app = express();
 const PORT = 3000;
@@ -24,13 +24,6 @@ const CONFIG_FILE_PATH = process.env.VERCEL
   ? path.join("/tmp", "system_config.json")
   : path.join(process.cwd(), "system_config.json");
 
-// Define and initialize uploads directory for storing files of any format
-const UPLOADS_DIR = process.env.VERCEL
-  ? path.join("/tmp", "uploads")
-  : path.join(process.cwd(), "uploads");
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
 
 // Default universal seed notes
 const DEFAULT_UNIVERSAL_NOTES = [
@@ -49,8 +42,8 @@ const DEFAULT_UNIVERSAL_NOTES = [
   },
   {
     id: "univ-note-2",
-    title: "The Schrödinger Equation & Wave Functions Demystified",
-    content: "The Schrödinger Equation represents the cornerstone of modern quantum mechanics, describing how the quantum state of a physical system changes over time.\n\n### Time-Independent Schrödinger Equation\n$$\\hat{H}\\psi = E\\psi$$\n- $\\hat{H}$ is the Hamiltonian Operator (representing total energy).\n- $\\psi$ is the Wave Function (describes spatial probability amplitude).\n- $E$ is the total energy eigenvalue.\n\n### Interpretations of the Wave Function\nMax Born proposed that the square of the magnitude of the wave function, $|\\psi(x)|^2$, represents the probability density of finding a particle at a given coordinate $x$ at a specific time.\n\n- **Normalisation**: The probability of finding the particle *somewhere* in the universe must sum to 1.\n$$\\int_{-\\infty}^{\\infty} |\\psi(x)|^2 dx = 1$$",
+    title: "The SchrÃ¶dinger Equation & Wave Functions Demystified",
+    content: "The SchrÃ¶dinger Equation represents the cornerstone of modern quantum mechanics, describing how the quantum state of a physical system changes over time.\n\n### Time-Independent SchrÃ¶dinger Equation\n$$\\hat{H}\\psi = E\\psi$$\n- $\\hat{H}$ is the Hamiltonian Operator (representing total energy).\n- $\\psi$ is the Wave Function (describes spatial probability amplitude).\n- $E$ is the total energy eigenvalue.\n\n### Interpretations of the Wave Function\nMax Born proposed that the square of the magnitude of the wave function, $|\\psi(x)|^2$, represents the probability density of finding a particle at a given coordinate $x$ at a specific time.\n\n- **Normalisation**: The probability of finding the particle *somewhere* in the universe must sum to 1.\n$$\\int_{-\\infty}^{\\infty} |\\psi(x)|^2 dx = 1$$",
     subjectName: "Advanced Quantum Mechanics",
     subjectCode: "PHYS-402",
     topicName: "Quantum Foundations",
@@ -76,7 +69,7 @@ const DEFAULT_UNIVERSAL_NOTES = [
 ];
 
 const DEFAULT_CONFIG = {
-  announcement: "🎓 Welcome to the new Notsopedia Universal Hub! Download community notes, access the Live AI Search, and share research notes permanently.",
+  announcement: "ðŸŽ“ Welcome to the new Notsopedia Universal Hub! Download community notes, access the Live AI Search, and share research notes permanently.",
   announcementActive: true,
   enableSimulator: false,
   enableSubmissions: true
@@ -107,12 +100,12 @@ try {
     const firebaseApp = initializeApp(firebaseConfig);
     db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
     useFirestore = true;
-    console.log("🔥 Connected to Google Cloud Firestore database successfully.");
+    console.log("ðŸ”¥ Connected to Google Cloud Firestore database successfully.");
   } else {
-    console.warn("⚠️ No Firebase configuration file or environment variables found. Using offline file backup.");
+    console.warn("âš ï¸ No Firebase configuration file or environment variables found. Using offline file backup.");
   }
 } catch (err) {
-  console.warn("⚠️ Local mode: Firestore failed to initialize, using local files fallback.", err);
+  console.warn("âš ï¸ Local mode: Firestore failed to initialize, using local files fallback.", err);
   useFirestore = false;
 }
 
@@ -123,12 +116,12 @@ async function seedFirestoreIfNeeded() {
     const notesCol = collection(db, "notes");
     const snapshot = await getDocs(notesCol);
     if (snapshot.empty) {
-      console.log("📥 Seeding default universal notes to Cloud Firestore...");
+      console.log("ðŸ“¥ Seeding default universal notes to Cloud Firestore...");
       for (const note of DEFAULT_UNIVERSAL_NOTES) {
         const { id, ...data } = note;
         await setDoc(doc(db, "notes", id), data);
       }
-      console.log("✅ Successfully seeded default universal notes in Firestore.");
+      console.log("âœ… Successfully seeded default universal notes in Firestore.");
     }
     
     // Seed default config
@@ -136,10 +129,10 @@ async function seedFirestoreIfNeeded() {
     const configDoc = await getDoc(configDocRef);
     if (!configDoc.exists()) {
       await setDoc(configDocRef, DEFAULT_CONFIG);
-      console.log("✅ Seeded default system configuration in Firestore.");
+      console.log("âœ… Seeded default system configuration in Firestore.");
     }
   } catch (err) {
-    console.warn("❌ Firestore seeding failed (probably running local dev without credentials)", err);
+    console.warn("âŒ Firestore seeding failed (probably running local dev without credentials)", err);
   }
 }
 
@@ -216,25 +209,6 @@ app.get("/api/notes", async (req, res) => {
 });
 
 // 2. CREATE A NOTE (with instant Firestore write and optional file attachment)
-app.get("/api/uploads/:noteId/:filename", (req, res) => {
-  try {
-    const { noteId, filename } = req.params;
-    // Sanitize parameters to avoid directory traversal
-    const safeNoteId = noteId.replace(/[^a-zA-Z0-9_\-]/g, "");
-    const safeFilename = filename.replace(/[^a-zA-Z0-9_\-\.]/g, "_");
-    const filePath = path.join(UPLOADS_DIR, `${safeNoteId}-${safeFilename}`);
-    
-    if (fs.existsSync(filePath)) {
-      return res.sendFile(filePath);
-    } else {
-      return res.status(404).send("File not found");
-    }
-  } catch (err) {
-    console.error("Error serving file:", err);
-    res.status(500).send("Error retrieving file");
-  }
-});
-
 app.post("/api/notes", async (req, res) => {
   try {
     const { 
@@ -265,30 +239,10 @@ app.post("/api/notes", async (req, res) => {
 
     const newId = "note-" + Date.now();
     
-    let fileUrl: string | undefined = undefined;
-    let savedFileName: string | undefined = undefined;
-    let savedFileSize: number | undefined = undefined;
-
-    // Handle optional file attachment decode and storage
-    if (fileData && fileName) {
-      const safeFilename = fileName.replace(/[^a-zA-Z0-9_\-\.]/g, "_");
-      let base64Content = fileData;
-      if (fileData.includes(";base64,")) {
-        base64Content = fileData.split(";base64,")[1];
-      }
-      
-      const fileBuffer = Buffer.from(base64Content, "base64");
-      const diskFilename = `${newId}-${safeFilename}`;
-      const filePath = path.join(UPLOADS_DIR, diskFilename);
-      
-      fs.writeFileSync(filePath, fileBuffer);
-      
-      fileUrl = `/api/uploads/${newId}/${safeFilename}`;
-      savedFileName = fileName;
-      savedFileSize = fileSize || fileBuffer.length;
-      console.log(`💾 File uploaded and written to disk: ${filePath} (${savedFileSize} bytes)`);
-    }
-
+    // Keep the permanent URL supplied by the frontend.
+    let savedFileUrl: string | undefined = fileUrl || undefined;
+    let savedFileName: string | undefined = fileName || undefined;
+    let savedFileSize: number | undefined = fileSize || undefined;
     const newNote: any = {
       title,
       content: resolvedContent,
@@ -315,7 +269,7 @@ app.post("/api/notes", async (req, res) => {
     if (useFirestore && db) {
       try {
         await setDoc(doc(db, "notes", newId), newNote);
-        console.log(`✅ Permanent storage written: Saved note ${newId} to Firestore.`);
+        console.log(`âœ… Permanent storage written: Saved note ${newId} to Firestore.`);
       } catch (err) {
         console.error("Failed to write to Cloud Firestore, fallback to local files.", err);
       }
@@ -378,32 +332,17 @@ app.delete("/api/notes/:id", async (req, res) => {
     try {
       await deleteDoc(doc(db, "notes", id));
       deleted = true;
-      console.log(`✅ Note ${id} deleted from Cloud Firestore permanently.`);
+      console.log(`âœ… Note ${id} deleted from Cloud Firestore permanently.`);
     } catch (err) {
       console.error("Firestore delete note failed.", err);
     }
   }
 
   const localNotes = readNotesFromFile();
-  const noteToDelete = localNotes.find(n => n.id === id);
   const filtered = localNotes.filter(n => n.id !== id);
   if (localNotes.length !== filtered.length) {
     writeNotesToFile(filtered);
     deleted = true;
-
-    // Clean up physical uploaded file from disk if it exists
-    if (noteToDelete && noteToDelete.fileName) {
-      const safeFilename = noteToDelete.fileName.replace(/[^a-zA-Z0-9_\-\.]/g, "_");
-      const filePath = path.join(UPLOADS_DIR, `${id}-${safeFilename}`);
-      if (fs.existsSync(filePath)) {
-        try {
-          fs.unlinkSync(filePath);
-          console.log(`🗑️ Deleted file from disk: ${filePath}`);
-        } catch (err) {
-          console.error("Error deleting file from disk:", err);
-        }
-      }
-    }
   }
 
   if (deleted) {
@@ -455,7 +394,7 @@ app.put("/api/notes/:id", async (req, res) => {
     try {
       await updateDoc(doc(db, "notes", id), updateFields);
       updated = true;
-      console.log(`✅ Note ${id} updated in Cloud Firestore permanently.`);
+      console.log(`âœ… Note ${id} updated in Cloud Firestore permanently.`);
     } catch (err) {
       console.error("Firestore update note failed.", err);
     }
@@ -501,7 +440,7 @@ app.post("/api/system/config", async (req, res) => {
     if (useFirestore && db) {
       try {
         await setDoc(doc(db, "system_config", "main"), updated);
-        console.log("✅ Updated system configuration in Cloud Firestore permanently.");
+        console.log("âœ… Updated system configuration in Cloud Firestore permanently.");
       } catch (err) {
         console.error("Firestore config write failed.", err);
       }
@@ -532,7 +471,7 @@ app.post("/api/notes/reset", async (req, res) => {
           const { id, ...data } = note;
           await setDoc(doc(db, "notes", id), data);
         }
-        console.log("✅ Firestore notes factory reset completed.");
+        console.log("âœ… Firestore notes factory reset completed.");
       } catch (err) {
         console.error("Firestore factory reset failed.", err);
       }
@@ -785,10 +724,10 @@ async function startServer() {
 
   if (!process.env.VERCEL) {
     app.listen(PORT, "0.0.0.0", () => {
-      console.log(`🚀 Notsopedia Hub backend server booted successfully on port ${PORT}`);
+      console.log(`ðŸš€ Notsopedia Hub backend server booted successfully on port ${PORT}`);
     });
   } else {
-    console.log("☁️ Running on Vercel serverless environment. Dynamic port binding skipped.");
+    console.log("â˜ï¸ Running on Vercel serverless environment. Dynamic port binding skipped.");
   }
 }
 
@@ -797,5 +736,6 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
+
 
 
