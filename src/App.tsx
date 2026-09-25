@@ -712,18 +712,38 @@ export default function App() {
   // Universal note download:
   // - Uploaded files are downloaded in their original format.
   // - Typed notes are exported as Markdown with the complete note content.
-  const handleDownloadNoteMarkdown = (note: UserNote) => {
+  const handleDownloadNoteMarkdown = async (note: UserNote) => {
     if (note.fileUrl && note.fileName) {
-      const link = document.createElement("a");
-      link.href = note.fileUrl;
-      link.setAttribute("download", note.fileName);
-      link.target = "_blank";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      try {
+        showToast(`Preparing "${note.fileName}" for download...`, "success");
 
-      showToast(`Downloading "${note.fileName}"...`, "success");
-      return;
+        const response = await fetch(note.fileUrl);
+
+        if (!response.ok) {
+          throw new Error(`File download failed: ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = note.fileName;
+        link.style.display = "none";
+
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+
+        showToast(`Downloaded "${note.fileName}" successfully.`, "success");
+        return;
+      } catch (error) {
+        console.error("Original file download failed:", error);
+        showToast(`Unable to download "${note.fileName}". Please try again.`, "error");
+        return;
+      }
     }
 
     const markdown = `---
@@ -1371,12 +1391,13 @@ ${note.content || "No text content was provided."}
                             {note.fileUrl && (
                               <a 
                                 href={note.fileUrl} 
-                                download={note.fileName}
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
                                 className="p-1 hover:bg-emerald-100 text-emerald-700 rounded transition-all shrink-0"
-                                title="Download Attachment"
+                                title="Read / Open File"
                               >
-                                <Download className="h-3 w-3" />
+                                <Eye className="h-3 w-3" />
                               </a>
                             )}
                           </div>
@@ -1532,11 +1553,11 @@ ${note.content || "No text content was provided."}
                         {viewingNote.fileUrl && (
                           <a 
                             href={viewingNote.fileUrl} 
-                            download={viewingNote.fileName}
+                            target="_blank" rel="noopener noreferrer"
                             className="px-4 py-2 bg-[#10b981] border border-black text-black text-center font-bold uppercase shadow-[2px_2px_0px_rgba(0,0,0,1)] hover:shadow-[3px_3px_0px_rgba(0,0,0,1)] transition-all flex items-center justify-center space-x-1.5 shrink-0"
                           >
-                            <Download className="h-3.5 w-3.5 text-black" />
-                            <span>Download Document</span>
+                            <Eye className="h-3.5 w-3.5 text-black" />
+                            <span>Open File</span>
                           </a>
                         )}
                       </div>
@@ -2234,4 +2255,7 @@ ${note.content || "No text content was provided."}
     </div>
   );
 }
+
+
+
 
