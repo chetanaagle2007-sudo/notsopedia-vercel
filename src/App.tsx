@@ -307,7 +307,7 @@ export default function App() {
         const storagePath = `${Date.now()}-${safeFileName}`;
 
         const { error: uploadError } = await supabase.storage
-          .from("notsopedia")
+          .from("Notsopedia")
           .upload(storagePath, fileBlob, {
             contentType: fileBlob.type || "application/octet-stream",
             upsert: false
@@ -318,7 +318,7 @@ export default function App() {
         }
 
         const { data: publicUrlData } = supabase.storage
-          .from("notsopedia")
+          .from("Notsopedia")
           .getPublicUrl(storagePath);
 
         if (!publicUrlData?.publicUrl) {
