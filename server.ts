@@ -221,6 +221,7 @@ app.post("/api/notes", async (req, res) => {
       uploaderRole, 
       uploaderEmail,
       fileData,
+      fileUrl,
       fileName,
       fileSize,
       noteType,
@@ -736,6 +737,7 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
+
 
 
 
