@@ -9,6 +9,7 @@
       "DOM",
       "DOM.Iterable"
     ],
+    "types": ["vite/client"],
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "isolatedModules": true,
@@ -22,5 +23,12 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "**/*.backup.*",
+    "**/*.before-*.tsx",
+    "**/*.migration-backup",
+    "firestore-export.ts",
+    "migrate-firestore-to-supabase.ts"
+  ]
 }

@@ -1,14 +1,24 @@
-﻿import express from "express";
+import express from "express";
 import path from "path";
 import dotenv from "dotenv";
+import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, updateDoc, writeBatch, runTransaction, getDoc } from "firebase/firestore";
 
 // Load environment variables
-dotenv.config();
+dotenv.config({ path: ".env.local" });
 
-console.log("ðŸ”‘ [SYSTEM CONFIG] Standalone Server Initialized.");
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.warn("?? Supabase environment variables are missing. Supabase backend will be unavailable.");
+}
+
+const supabase = supabaseUrl && supabaseKey
+  ? createClient(supabaseUrl, supabaseKey)
+  : null;
+
+console.log("🔑 [SYSTEM CONFIG] Standalone Server Initialized.");
 
 const app = express();
 const PORT = 3000;
@@ -42,8 +52,8 @@ const DEFAULT_UNIVERSAL_NOTES = [
   },
   {
     id: "univ-note-2",
-    title: "The SchrÃ¶dinger Equation & Wave Functions Demystified",
-    content: "The SchrÃ¶dinger Equation represents the cornerstone of modern quantum mechanics, describing how the quantum state of a physical system changes over time.\n\n### Time-Independent SchrÃ¶dinger Equation\n$$\\hat{H}\\psi = E\\psi$$\n- $\\hat{H}$ is the Hamiltonian Operator (representing total energy).\n- $\\psi$ is the Wave Function (describes spatial probability amplitude).\n- $E$ is the total energy eigenvalue.\n\n### Interpretations of the Wave Function\nMax Born proposed that the square of the magnitude of the wave function, $|\\psi(x)|^2$, represents the probability density of finding a particle at a given coordinate $x$ at a specific time.\n\n- **Normalisation**: The probability of finding the particle *somewhere* in the universe must sum to 1.\n$$\\int_{-\\infty}^{\\infty} |\\psi(x)|^2 dx = 1$$",
+    title: "The Schrödinger Equation & Wave Functions Demystified",
+    content: "The Schrödinger Equation represents the cornerstone of modern quantum mechanics, describing how the quantum state of a physical system changes over time.\n\n### Time-Independent Schrödinger Equation\n$$\\hat{H}\\psi = E\\psi$$\n- $\\hat{H}$ is the Hamiltonian Operator (representing total energy).\n- $\\psi$ is the Wave Function (describes spatial probability amplitude).\n- $E$ is the total energy eigenvalue.\n\n### Interpretations of the Wave Function\nMax Born proposed that the square of the magnitude of the wave function, $|\\psi(x)|^2$, represents the probability density of finding a particle at a given coordinate $x$ at a specific time.\n\n- **Normalisation**: The probability of finding the particle *somewhere* in the universe must sum to 1.\n$$\\int_{-\\infty}^{\\infty} |\\psi(x)|^2 dx = 1$$",
     subjectName: "Advanced Quantum Mechanics",
     subjectCode: "PHYS-402",
     topicName: "Quantum Foundations",
@@ -69,74 +79,13 @@ const DEFAULT_UNIVERSAL_NOTES = [
 ];
 
 const DEFAULT_CONFIG = {
-  announcement: "ðŸŽ“ Welcome to the new Notsopedia Universal Hub! Download community notes, access the Live AI Search, and share research notes permanently.",
+  announcement: "🎓 Welcome to the new Notsopedia Universal Hub! Download community notes, access the Live AI Search, and share research notes permanently.",
   announcementActive: true,
   enableSimulator: false,
   enableSubmissions: true
 };
 
-// ----------------- FIRESTORE SETUP -----------------
-let db: any = null;
-let useFirestore = false;
-
-try {
-  let firebaseConfig: any = null;
-  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-  if (fs.existsSync(configPath)) {
-    firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  } else if (process.env.FIREBASE_API_KEY) {
-    firebaseConfig = {
-      apiKey: process.env.FIREBASE_API_KEY,
-      authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-      messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-      appId: process.env.FIREBASE_APP_ID,
-      firestoreDatabaseId: process.env.FIREBASE_FIRESTORE_DATABASE_ID || ""
-    };
-  }
-
-  if (firebaseConfig) {
-    const firebaseApp = initializeApp(firebaseConfig);
-    db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
-    useFirestore = true;
-    console.log("ðŸ”¥ Connected to Google Cloud Firestore database successfully.");
-  } else {
-    console.warn("âš ï¸ No Firebase configuration file or environment variables found. Using offline file backup.");
-  }
-} catch (err) {
-  console.warn("âš ï¸ Local mode: Firestore failed to initialize, using local files fallback.", err);
-  useFirestore = false;
-}
-
-// Seeding Firestore helper
-async function seedFirestoreIfNeeded() {
-  if (!useFirestore || !db) return;
-  try {
-    const notesCol = collection(db, "notes");
-    const snapshot = await getDocs(notesCol);
-    if (snapshot.empty) {
-      console.log("ðŸ“¥ Seeding default universal notes to Cloud Firestore...");
-      for (const note of DEFAULT_UNIVERSAL_NOTES) {
-        const { id, ...data } = note;
-        await setDoc(doc(db, "notes", id), data);
-      }
-      console.log("âœ… Successfully seeded default universal notes in Firestore.");
-    }
-    
-    // Seed default config
-    const configDocRef = doc(db, "system_config", "main");
-    const configDoc = await getDoc(configDocRef);
-    if (!configDoc.exists()) {
-      await setDoc(configDocRef, DEFAULT_CONFIG);
-      console.log("âœ… Seeded default system configuration in Firestore.");
-    }
-  } catch (err) {
-    console.warn("âŒ Firestore seeding failed (probably running local dev without credentials)", err);
-  }
-}
-
-// Local files fallback backup helpers
+// ----------------- LOCAL FILES FALLBACK BACKUP HELPERS
 function readNotesFromFile(): any[] {
   try {
     if (fs.existsSync(NOTES_FILE_PATH)) {
@@ -181,310 +130,786 @@ function writeConfigToFile(config: any) {
   }
 }
 
+
+// Request-scoped Supabase client that forwards the user's Bearer token.
+// This allows the Supabase SDK to pass the token through to RLS.
+const createRequestSupabase = (req: import('express').Request) => {
+  if (!supabaseUrl || !supabaseKey) {
+    return null;
+  }
+
+  const authorization = req.headers.authorization;
+
+  if (!authorization?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  return createClient(supabaseUrl, supabaseKey, {
+    global: {
+      headers: {
+        Authorization: authorization,
+      },
+    },
+  });
+};
+
 // ----------------- API ENDPOINTS -----------------
 
-// 1. GET ALL NOTES (with real-time Firestore fetch)
+// 1. GET ALL NOTES (Supabase)
 app.get("/api/notes", async (req, res) => {
-  if (useFirestore && db) {
-    try {
-      const snapshot = await getDocs(collection(db, "notes"));
-      const notes: any[] = [];
-      snapshot.forEach(doc => {
-        notes.push({ id: doc.id, ...doc.data() });
-      });
-      // Sort newest first
-      notes.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
-      
-      if (notes.length > 0) {
-        // Keep local backup synchronized
-        writeNotesToFile(notes);
-        return res.json(notes);
-      }
-    } catch (err) {
-      console.warn("Firestore fetch notes failed, using offline file backup.", err);
-    }
+  if (!supabase) {
+    return res.status(503).json({ error: "Supabase is not configured." });
   }
-  // Fallback to local files
-  res.json(readNotesFromFile());
+
+  try {
+    const { data, error } = await supabase
+      .from("notes")
+      .select("*")
+      .order("uploaded_at", { ascending: false });
+
+    if (error) {
+      console.error("Supabase fetch notes failed:", error);
+      return res.status(500).json({ error: "Failed to fetch study notes." });
+    }
+
+    const notes = (data || []).map((note: any) => ({
+      id: note.id,
+      title: note.title,
+      content: note.content,
+      subjectName: note.subject_name,
+      subjectCode: note.subject_code,
+      topicName: note.topic_name,
+      uploaderName: note.uploader_name,
+      uploaderRole: note.uploader_role,
+      uploaderEmail: note.uploader_email,
+      ownerId: note.owner_id,
+      fileUrl: note.file_url,
+      fileName: note.file_name,
+      fileSize: note.file_size,
+      noteType: note.note_type,
+      tags: note.tags || [],
+      language: note.language,
+      sourceType: note.source_type,
+      likes: note.likes || 0,
+      uploadedAt: note.uploaded_at,
+      updatedAt: note.updated_at
+    }));
+
+    writeNotesToFile(notes);
+    return res.json(notes);
+  } catch (err) {
+    console.error("Failed to fetch notes from Supabase:", err);
+    return res.status(500).json({ error: "Failed to fetch study notes." });
+  }
 });
 
-// 2. CREATE A NOTE (with instant Firestore write and optional file attachment)
+// 1B. GET CURRENT USER LIKED NOTE IDS (Supabase)
+app.get("/api/notes/liked", async (req, res) => {
+  try {
+    if (!supabase) {
+      return res.status(503).json({
+        error: "Supabase is not configured."
+      });
+    }
+
+    const requestSupabase = createRequestSupabase(req);
+
+    if (!requestSupabase) {
+      return res.status(401).json({
+        error: "You must be signed in to load your liked notes."
+      });
+    }
+
+    const {
+      data: { user },
+      error: authError
+    } = await requestSupabase.auth.getUser();
+
+    if (authError || !user) {
+      return res.status(401).json({
+        error: "Your Supabase session is invalid or expired. Please sign in again."
+      });
+    }
+
+    const { data, error } = await requestSupabase
+      .from("note_likes")
+      .select("note_id")
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("Supabase liked notes fetch failed:", error);
+      return res.status(500).json({
+        error: "Failed to load liked notes."
+      });
+    }
+
+    return res.json({
+      noteIds: (data || []).map((row: any) => row.note_id)
+    });
+  } catch (err) {
+    console.error("Failed to fetch liked notes:", err);
+    return res.status(500).json({
+      error: "Failed to load liked notes."
+    });
+  }
+});
+
+// 2. CREATE A NOTE (Supabase)
 app.post("/api/notes", async (req, res) => {
   try {
-    const { 
-      title, 
-      content, 
-      subjectName, 
-      subjectCode, 
-      topicName, 
-      uploaderName, 
-      uploaderRole, 
+    const {
+      title,
+      content,
+      subjectName,
+      subjectCode,
+      topicName,
+      uploaderName,
+      uploaderRole,
       uploaderEmail,
-      fileData,
       fileUrl,
       fileName,
       fileSize,
       noteType,
       tags,
       language,
-      sourceType 
+      sourceType
     } = req.body;
-    
-    // Resolve content - if a file is uploaded but no text content is provided,
-    // we use a nice auto-generated description so that it passes Firestore rules.
-    const resolvedContent = content || (fileName ? `*(Attached file: ${fileName})*` : "");
+
+    const resolvedContent =
+      content || (fileName ? `*(Attached file: ${fileName})*` : "");
 
     if (!title || !resolvedContent || !subjectName || !uploaderName) {
-      return res.status(400).json({ error: "Missing required note details (title, content/file, subject, uploader name)" });
+      return res.status(400).json({
+        error: "Missing required note details (title, content/file, subject, uploader name)"
+      });
+    }
+
+    if (!supabase) {
+      return res.status(503).json({
+        error: "Supabase is not configured."
+      });
+    }
+
+    const requestSupabase = createRequestSupabase(req);
+
+    if (!requestSupabase) {
+      return res.status(401).json({
+        error: "You must be signed in to publish a study note."
+      });
+    }
+
+    const {
+      data: { user },
+      error: authError
+    } = await requestSupabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error("Supabase authentication failed:", authError);
+      return res.status(401).json({
+        error: "Your Supabase session is invalid or expired. Please sign in again."
+      });
     }
 
     const newId = "note-" + Date.now();
-    
-    // Keep the permanent URL supplied by the frontend.
-    let savedFileUrl: string | undefined = fileUrl || undefined;
-    let savedFileName: string | undefined = fileName || undefined;
-    let savedFileSize: number | undefined = fileSize || undefined;
-    const newNote: any = {
+
+    const noteToInsert = {
+      id: newId,
       title,
       content: resolvedContent,
-      subjectName,
-      subjectCode: subjectCode || "GEN-ACAD",
-      topicName: topicName || "General Topic",
-      uploaderName,
-      uploaderRole: uploaderRole || "Student",
-      uploaderEmail: uploaderEmail || "",
-      uploadedAt: new Date().toISOString(),
-      likes: 0,
-      noteType: noteType || "General",
+      subject_name: subjectName,
+      subject_code: subjectCode || "GEN-ACAD",
+      topic_name: topicName || "General Topic",
+      uploader_name: uploaderName,
+      uploader_role: uploaderRole || "Student",
+      uploader_email: uploaderEmail || user.email || "",
+      owner_id: user.id,
+      file_url: fileUrl || null,
+      file_name: fileName || null,
+      file_size: fileSize || null,
+      note_type: noteType || "General",
       tags: Array.isArray(tags) ? tags : [],
       language: language || "",
-      sourceType: sourceType || (fileName ? "File Upload" : "Typed Note")
+      source_type: sourceType || (fileName ? "File Upload" : "Typed Note"),
+      likes: 0
     };
 
-    if (fileUrl) {
-      newNote.fileUrl = fileUrl;
-      newNote.fileName = savedFileName;
-      newNote.fileSize = savedFileSize;
+    const { data, error } = await requestSupabase
+      .from("notes")
+      .insert(noteToInsert)
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("Supabase note insert failed:", error);
+      return res.status(500).json({
+        error: "Failed to save study note."
+      });
     }
 
-    if (useFirestore && db) {
-      try {
-        await setDoc(doc(db, "notes", newId), newNote);
-        console.log(`âœ… Permanent storage written: Saved note ${newId} to Firestore.`);
-      } catch (err) {
-        console.error("Failed to write to Cloud Firestore, fallback to local files.", err);
-      }
-    }
+    const newNote = {
+      id: data.id,
+      title: data.title,
+      content: data.content,
+      subjectName: data.subject_name,
+      subjectCode: data.subject_code,
+      topicName: data.topic_name,
+      uploaderName: data.uploader_name,
+      uploaderRole: data.uploader_role,
+      uploaderEmail: data.uploader_email,
+      ownerId: data.owner_id,
+      fileUrl: data.file_url,
+      fileName: data.file_name,
+      fileSize: data.file_size,
+      noteType: data.note_type,
+      tags: data.tags || [],
+      language: data.language,
+      sourceType: data.source_type,
+      likes: data.likes || 0,
+      uploadedAt: data.uploaded_at,
+      updatedAt: data.updated_at
+    };
 
-    // Sync to local files regardless
     const localNotes = readNotesFromFile();
-    localNotes.unshift({ id: newId, ...newNote });
+    localNotes.unshift(newNote);
     writeNotesToFile(localNotes);
 
-    res.status(201).json({ id: newId, ...newNote });
+    console.log(`Supabase: Saved note ${newId} for user ${user.id}.`);
+    return res.status(201).json(newNote);
   } catch (err) {
     console.error("Failed to upload note:", err);
-    res.status(500).json({ error: "Failed to upload study note." });
+    return res.status(500).json({
+      error: "Failed to upload study note."
+    });
   }
 });
 
-// 3. LIKE A NOTE (with dynamic Firestore transaction)
+// 3. LIKE / UNLIKE A NOTE
 app.post("/api/notes/:id/like", async (req, res) => {
-  const { id } = req.params;
-  let success = false;
+  try {
+    const { id } = req.params;
 
-  if (useFirestore && db) {
-    try {
-      const docRef = doc(db, "notes", id);
-      await runTransaction(db, async (transaction) => {
-        const sfDoc = await transaction.get(docRef);
-        if (sfDoc.exists()) {
-          const currentLikes = sfDoc.data()?.likes || 0;
-          transaction.update(docRef, { likes: currentLikes + 1 });
-          success = true;
-        }
+    if (!supabase) {
+      return res.status(503).json({
+        error: "Supabase is not configured."
       });
-    } catch (err) {
-      console.error("Firestore transaction like failed, using offline file modification.", err);
     }
-  }
 
-  // Update local backup
-  const localNotes = readNotesFromFile();
-  const index = localNotes.findIndex(n => n.id === id);
-  if (index !== -1) {
-    localNotes[index].likes = (localNotes[index].likes || 0) + 1;
-    writeNotesToFile(localNotes);
-    return res.json(localNotes[index]);
-  }
+    const requestSupabase = createRequestSupabase(req);
 
-  if (success) {
-    return res.json({ id, status: "liked" });
+    if (!requestSupabase) {
+      return res.status(401).json({
+        error: "You must be signed in to like a study note."
+      });
+    }
+
+    const {
+      data: { user },
+      error: authError
+    } = await requestSupabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error("Supabase authentication failed:", authError);
+      return res.status(401).json({
+        error: "Your Supabase session is invalid or expired. Please sign in again."
+      });
+    }
+
+    const { data, error } = await requestSupabase.rpc(
+      "toggle_note_like",
+      { note_id: id }
+    );
+
+    if (error) {
+      console.error("Supabase note like toggle failed:", error);
+
+      if (error.message?.toLowerCase().includes("note not found")) {
+        return res.status(404).json({
+          error: "Note not found."
+        });
+      }
+
+      if (error.message?.toLowerCase().includes("authentication required")) {
+        return res.status(401).json({
+          error: "You must be signed in to like a study note."
+        });
+      }
+
+      return res.status(500).json({
+        error: "Failed to update note like."
+      });
+    }
+
+    const result = Array.isArray(data) ? data[0] : data;
+
+    if (!result) {
+      return res.status(500).json({
+        error: "The note like operation returned no result."
+      });
+    }
+
+    console.log(
+      `Supabase: User ${user.id} ${result.liked ? "liked" : "unliked"} note ${id}.`
+    );
+
+    return res.json({
+      noteId: id,
+      liked: Boolean(result.liked),
+      likes: Number(result.like_count || 0)
+    });
+  } catch (err) {
+    console.error("Failed to toggle note like:", err);
+    return res.status(500).json({
+      error: "Failed to update note like."
+    });
   }
-  res.status(404).json({ error: "Note not found" });
 });
 
 // 4. DELETE A NOTE (Administrator moderation option)
 app.delete("/api/notes/:id", async (req, res) => {
-  const { id } = req.params;
-  let deleted = false;
+  try {
+    const { id } = req.params;
 
-  if (useFirestore && db) {
-    try {
-      await deleteDoc(doc(db, "notes", id));
-      deleted = true;
-      console.log(`âœ… Note ${id} deleted from Cloud Firestore permanently.`);
-    } catch (err) {
-      console.error("Firestore delete note failed.", err);
+    if (!supabase) {
+      return res.status(503).json({
+        error: "Supabase is not configured."
+      });
     }
-  }
 
-  const localNotes = readNotesFromFile();
-  const filtered = localNotes.filter(n => n.id !== id);
-  if (localNotes.length !== filtered.length) {
-    writeNotesToFile(filtered);
-    deleted = true;
-  }
+    const requestSupabase = createRequestSupabase(req);
 
-  if (deleted) {
-    return res.json({ success: true, id });
+    if (!requestSupabase) {
+      return res.status(401).json({
+        error: "You must be signed in to delete a study note."
+      });
+    }
+
+    const {
+      data: { user },
+      error: authError
+    } = await requestSupabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error("Supabase authentication failed:", authError);
+      return res.status(401).json({
+        error: "Your Supabase session is invalid or expired. Please sign in again."
+      });
+    }
+
+    const { data, error } = await requestSupabase
+      .from("notes")
+      .delete()
+      .eq("id", id)
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error("Supabase note delete failed:", error);
+
+      if (error.code === "PGRST116") {
+        return res.status(404).json({
+          error: "Note not found or you are not authorized to delete it."
+        });
+      }
+
+      return res.status(500).json({
+        error: "Failed to delete study note."
+      });
+    }
+
+    const localNotes = readNotesFromFile();
+    const filtered = localNotes.filter(n => n.id !== id);
+
+    if (localNotes.length !== filtered.length) {
+      writeNotesToFile(filtered);
+    }
+
+    console.log(`Supabase: Deleted note ${id} for user ${user.id}.`);
+    return res.json({
+      success: true,
+      id: data.id
+    });
+  } catch (err) {
+    console.error("Failed to delete note:", err);
+    return res.status(500).json({
+      error: "Failed to delete study note."
+    });
   }
-  res.status(404).json({ error: "Note not found" });
 });
 
 // 5. UPDATE A NOTE (Administrator moderation edits)
 app.put("/api/notes/:id", async (req, res) => {
-  const { id } = req.params;
-  const { 
-    title, 
-    content, 
-    subjectName, 
-    subjectCode, 
-    topicName, 
-    uploaderName, 
-    uploaderRole, 
-    uploaderEmail,
-    fileUrl,
-    fileName,
-    fileSize,
-    noteType,
-    tags,
-    language,
-    sourceType
-  } = req.body;
-  let updated = false;
+  try {
+    const { id } = req.params;
 
-  const updateFields: any = {};
-  if (title) updateFields.title = title;
-  if (content) updateFields.content = content;
-  if (subjectName) updateFields.subjectName = subjectName;
-  if (subjectCode) updateFields.subjectCode = subjectCode;
-  if (topicName) updateFields.topicName = topicName;
-  if (uploaderName) updateFields.uploaderName = uploaderName;
-  if (uploaderRole) updateFields.uploaderRole = uploaderRole;
-  if (uploaderEmail !== undefined) updateFields.uploaderEmail = uploaderEmail;
-  if (fileUrl !== undefined) updateFields.fileUrl = fileUrl;
-  if (fileName !== undefined) updateFields.fileName = fileName;
-  if (fileSize !== undefined) updateFields.fileSize = fileSize;
-  if (noteType !== undefined) updateFields.noteType = noteType;
-  if (tags !== undefined) updateFields.tags = Array.isArray(tags) ? tags : [];
-  if (language !== undefined) updateFields.language = language;
-  if (sourceType !== undefined) updateFields.sourceType = sourceType;
-
-  if (useFirestore && db) {
-    try {
-      await updateDoc(doc(db, "notes", id), updateFields);
-      updated = true;
-      console.log(`âœ… Note ${id} updated in Cloud Firestore permanently.`);
-    } catch (err) {
-      console.error("Firestore update note failed.", err);
+    if (!supabase) {
+      return res.status(503).json({
+        error: "Supabase is not configured."
+      });
     }
-  }
 
-  const localNotes = readNotesFromFile();
-  const index = localNotes.findIndex(n => n.id === id);
-  if (index !== -1) {
-    localNotes[index] = { ...localNotes[index], ...updateFields };
-    writeNotesToFile(localNotes);
-    return res.json(localNotes[index]);
-  }
+    const requestSupabase = createRequestSupabase(req);
 
-  if (updated) {
-    return res.json({ id, ...updateFields });
+    if (!requestSupabase) {
+      return res.status(401).json({
+        error: "You must be signed in to edit a study note."
+      });
+    }
+
+    const {
+      data: { user },
+      error: authError
+    } = await requestSupabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error("Supabase authentication failed:", authError);
+      return res.status(401).json({
+        error: "Your Supabase session is invalid or expired. Please sign in again."
+      });
+    }
+
+    const {
+      title,
+      content,
+      subjectName,
+      subjectCode,
+      topicName,
+      uploaderName,
+      uploaderRole,
+      uploaderEmail,
+      fileUrl,
+      fileName,
+      fileSize,
+      noteType,
+      tags,
+      language,
+      sourceType
+    } = req.body;
+
+    const updateFields: any = {};
+
+    if (title !== undefined) updateFields.title = title;
+    if (content !== undefined) updateFields.content = content;
+    if (subjectName !== undefined) updateFields.subject_name = subjectName;
+    if (subjectCode !== undefined) updateFields.subject_code = subjectCode;
+    if (topicName !== undefined) updateFields.topic_name = topicName;
+    if (uploaderName !== undefined) updateFields.uploader_name = uploaderName;
+    if (uploaderRole !== undefined) updateFields.uploader_role = uploaderRole;
+    if (uploaderEmail !== undefined) updateFields.uploader_email = uploaderEmail;
+    if (fileUrl !== undefined) updateFields.file_url = fileUrl;
+    if (fileName !== undefined) updateFields.file_name = fileName;
+    if (fileSize !== undefined) updateFields.file_size = fileSize;
+    if (noteType !== undefined) updateFields.note_type = noteType;
+    if (tags !== undefined) updateFields.tags = Array.isArray(tags) ? tags : [];
+    if (language !== undefined) updateFields.language = language;
+    if (sourceType !== undefined) updateFields.source_type = sourceType;
+
+    if (Object.keys(updateFields).length === 0) {
+      return res.status(400).json({
+        error: "No fields were provided to update."
+      });
+    }
+
+    const { data, error } = await requestSupabase
+      .from("notes")
+      .update(updateFields)
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("Supabase note update failed:", error);
+      return res.status(500).json({
+        error: "Failed to update study note."
+      });
+    }
+
+    const updatedNote = {
+      id: data.id,
+      title: data.title,
+      content: data.content,
+      subjectName: data.subject_name,
+      subjectCode: data.subject_code,
+      topicName: data.topic_name,
+      uploaderName: data.uploader_name,
+      uploaderRole: data.uploader_role,
+      uploaderEmail: data.uploader_email,
+      ownerId: data.owner_id,
+      fileUrl: data.file_url,
+      fileName: data.file_name,
+      fileSize: data.file_size,
+      noteType: data.note_type,
+      tags: data.tags || [],
+      language: data.language,
+      sourceType: data.source_type,
+      likes: data.likes || 0,
+      uploadedAt: data.uploaded_at,
+      updatedAt: data.updated_at
+    };
+
+    const localNotes = readNotesFromFile();
+    const index = localNotes.findIndex(n => n.id === id);
+
+    if (index !== -1) {
+      localNotes[index] = updatedNote;
+      writeNotesToFile(localNotes);
+    }
+
+    console.log(`Supabase: Updated note ${id} for user ${user.id}.`);
+    return res.json(updatedNote);
+  } catch (err) {
+    console.error("Failed to update note:", err);
+    return res.status(500).json({
+      error: "Failed to update study note."
+    });
   }
-  res.status(404).json({ error: "Note not found" });
 });
-
-// 6. SYSTEM CONFIGURATION GET & UPDATE (with live Firestore sync)
+// 6. SYSTEM CONFIGURATION GET & UPDATE (Supabase)
 app.get("/api/system/config", async (req, res) => {
-  if (useFirestore && db) {
-    try {
-      const configDocRef = doc(db, "system_config", "main");
-      const configDoc = await getDoc(configDocRef);
-      if (configDoc.exists()) {
-        const data = configDoc.data();
-        writeConfigToFile(data);
-        return res.json(data);
-      }
-    } catch (err) {
-      console.warn("Firestore config read failed, using offline backup.");
+  try {
+    if (!supabase) {
+      return res.status(503).json({
+        error: "Supabase is not configured."
+      });
     }
+
+    const { data, error } = await supabase
+      .from("system_config")
+      .select("*")
+      .eq("id", "main")
+      .maybeSingle();
+
+    if (error) {
+      console.error("Supabase system config read failed:", error);
+      return res.json(readConfigFromFile());
+    }
+
+    if (!data) {
+      return res.json(readConfigFromFile());
+    }
+
+    const config = {
+      announcement: data.announcement,
+      announcementActive: data.announcement_active,
+      enableSimulator: data.enable_simulator,
+      enableSubmissions: data.enable_submissions
+    };
+
+    writeConfigToFile(config);
+    return res.json(config);
+  } catch (err) {
+    console.error("Failed to read system configuration:", err);
+    return res.json(readConfigFromFile());
   }
-  res.json(readConfigFromFile());
 });
 
 app.post("/api/system/config", async (req, res) => {
   try {
-    const currentLocal = readConfigFromFile();
-    const updated = { ...currentLocal, ...req.body };
-
-    if (useFirestore && db) {
-      try {
-        await setDoc(doc(db, "system_config", "main"), updated);
-        console.log("âœ… Updated system configuration in Cloud Firestore permanently.");
-      } catch (err) {
-        console.error("Firestore config write failed.", err);
-      }
+    if (!supabase) {
+      return res.status(503).json({
+        error: "Supabase is not configured."
+      });
     }
 
-    writeConfigToFile(updated);
-    res.json(updated);
+    const requestSupabase = createRequestSupabase(req);
+
+    if (!requestSupabase) {
+      return res.status(401).json({
+        error: "You must be signed in to update system configuration."
+      });
+    }
+
+    const {
+      data: { user },
+      error: authError
+    } = await requestSupabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error("Supabase authentication failed:", authError);
+      return res.status(401).json({
+        error: "Your Supabase session is invalid or expired. Please sign in again."
+      });
+    }
+
+    const currentLocal = readConfigFromFile();
+
+    const updated = {
+      announcement:
+        req.body.announcement !== undefined
+          ? req.body.announcement
+          : currentLocal.announcement,
+
+      announcementActive:
+        req.body.announcementActive !== undefined
+          ? Boolean(req.body.announcementActive)
+          : Boolean(currentLocal.announcementActive),
+
+      enableSimulator:
+        req.body.enableSimulator !== undefined
+          ? Boolean(req.body.enableSimulator)
+          : Boolean(currentLocal.enableSimulator),
+
+      enableSubmissions:
+        req.body.enableSubmissions !== undefined
+          ? Boolean(req.body.enableSubmissions)
+          : Boolean(currentLocal.enableSubmissions)
+    };
+
+    const { data, error } = await requestSupabase
+      .from("system_config")
+      .update({
+        announcement: updated.announcement,
+        announcement_active: updated.announcementActive,
+        enable_simulator: updated.enableSimulator,
+        enable_submissions: updated.enableSubmissions
+      })
+      .eq("id", "main")
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("Supabase system config update failed:", error);
+
+      if (
+        error.code === "42501" ||
+        error.message?.toLowerCase().includes("permission")
+      ) {
+        return res.status(403).json({
+          error: "Only administrators can update system configuration."
+        });
+      }
+
+      return res.status(500).json({
+        error: "Failed to update system configuration."
+      });
+    }
+
+    const savedConfig = {
+      announcement: data.announcement,
+      announcementActive: data.announcement_active,
+      enableSimulator: data.enable_simulator,
+      enableSubmissions: data.enable_submissions
+    };
+
+    writeConfigToFile(savedConfig);
+
+    console.log(
+      `Supabase: Updated system configuration by user ${user.id}.`
+    );
+
+    return res.json(savedConfig);
   } catch (err) {
-    res.status(500).json({ error: "Failed to update system configuration" });
+    console.error("Failed to update system configuration:", err);
+    return res.status(500).json({
+      error: "Failed to update system configuration."
+    });
   }
 });
 
 // 7. FACTORY RESET NOTES TO DEFAULT
 app.post("/api/notes/reset", async (req, res) => {
   try {
-    if (useFirestore && db) {
-      try {
-        // Clear old notes collection
-        const snapshot = await getDocs(collection(db, "notes"));
-        const batch = writeBatch(db);
-        snapshot.docs.forEach(doc => {
-          batch.delete(doc.ref);
-        });
-        await batch.commit();
-
-        // Seed fresh ones
-        for (const note of DEFAULT_UNIVERSAL_NOTES) {
-          const { id, ...data } = note;
-          await setDoc(doc(db, "notes", id), data);
-        }
-        console.log("âœ… Firestore notes factory reset completed.");
-      } catch (err) {
-        console.error("Firestore factory reset failed.", err);
-      }
+    if (!supabase) {
+      return res.status(503).json({
+        error: "Supabase is not configured."
+      });
     }
 
-    writeNotesToFile(DEFAULT_UNIVERSAL_NOTES);
-    res.json(DEFAULT_UNIVERSAL_NOTES);
+    const requestSupabase = createRequestSupabase(req);
+
+    if (!requestSupabase) {
+      return res.status(401).json({
+        error: "You must be signed in to reset the notes database."
+      });
+    }
+
+    const {
+      data: { user },
+      error: authError
+    } = await requestSupabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error("Supabase authentication failed:", authError);
+      return res.status(401).json({
+        error: "Your Supabase session is invalid or expired. Please sign in again."
+      });
+    }
+
+    const { error: deleteError } = await requestSupabase
+      .from("notes")
+      .delete()
+      .not("id", "is", null);
+
+    if (deleteError) {
+      console.error("Supabase notes factory reset delete failed:", deleteError);
+
+      if (
+        deleteError.code === "42501" ||
+        deleteError.message?.toLowerCase().includes("permission")
+      ) {
+        return res.status(403).json({
+          error: "Only administrators can reset the notes database."
+        });
+      }
+
+      return res.status(500).json({
+        error: "Failed to clear the notes database."
+      });
+    }
+
+    const seedRows = DEFAULT_UNIVERSAL_NOTES.map((note: any) => {
+      const {
+        id,
+        ownerId,
+        uploaderEmail,
+        uploadedAt,
+        updatedAt,
+        ...data
+      } = note;
+
+      return {
+        id,
+        ...data,
+        owner_id: ownerId ?? null,
+        uploader_email: uploaderEmail ?? null,
+        uploaded_at: uploadedAt ?? new Date().toISOString(),
+        updated_at: updatedAt ?? new Date().toISOString()
+      };
+    });
+
+    const { data: seededNotes, error: seedError } = await requestSupabase
+      .from("notes")
+      .insert(seedRows)
+      .select("*");
+
+    if (seedError) {
+      console.error("Supabase notes factory reset seed failed:", seedError);
+      return res.status(500).json({
+        error: "Notes were cleared, but restoring the default notes failed."
+      });
+    }
+
+    const normalizedNotes = (seededNotes || []).map((note: any) => ({
+      ...note,
+      ownerId: note.owner_id,
+      uploaderEmail: note.uploader_email,
+      uploadedAt: note.uploaded_at,
+      updatedAt: note.updated_at
+    }));
+
+    writeNotesToFile(normalizedNotes);
+
+    console.log(
+      `Supabase: Notes factory reset completed by user ${user.id}.`
+    );
+
+    return res.json(normalizedNotes);
   } catch (err) {
-    res.status(500).json({ error: "Failed to reset database" });
+    console.error("Supabase notes factory reset failed:", err);
+    return res.status(500).json({
+      error: "Failed to reset database."
+    });
   }
 });
-
 // ----------------- INTELLIGENT OFFLINE ACADEMIC GENERATOR -----------------
 async function generateAiResponseWithGemini(
   question: string,
@@ -669,22 +1094,37 @@ app.post("/api/ai/ask", async (req, res) => {
       return res.status(400).json({ error: "Question is required" });
     }
 
-    // Fetch notes list to pass into the local academic engine
+    // Fetch notes from Supabase for the local academic engine.
+    // Public note reads are allowed by the notes table RLS policy.
     let notesList: any[] = [];
-    try {
-      if (useFirestore && db) {
-        const snapshot = await getDocs(collection(db, "notes"));
-        snapshot.forEach(doc => {
-          notesList.push({ id: doc.id, ...doc.data() });
-        });
+
+    if (supabase) {
+      try {
+        const { data: supabaseNotes, error: notesError } = await supabase
+          .from("notes")
+          .select("*");
+
+        if (notesError) {
+          console.error("Supabase AI notes fetch failed:", notesError);
+        } else {
+          notesList = (supabaseNotes || []).map((note: any) => ({
+            ...note,
+            subjectName: note.subject_name,
+            topicName: note.topic_name,
+            uploaderEmail: note.uploader_email,
+            uploadedAt: note.uploaded_at,
+            updatedAt: note.updated_at,
+            ownerId: note.owner_id
+          }));
+        }
+      } catch (dbErr) {
+        console.error("Supabase AI notes fetch failed:", dbErr);
       }
-    } catch (dbErr) {
-      // Ignored, we fallback to reading local failover file
     }
+
     if (notesList.length === 0) {
       notesList = readNotesFromFile();
     }
-
     const result = await generateAiResponseWithGemini(question, mode, notesList);
 
     res.json({
@@ -700,13 +1140,11 @@ app.post("/api/ai/ask", async (req, res) => {
 
 // API Health Check
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", firestore: useFirestore, time: new Date().toISOString() });
+  res.json({ status: "ok", supabase: Boolean(supabase), time: new Date().toISOString() });
 });
 
 // Setup Vite or Production Static Serving
 async function startServer() {
-  // Ensure seed run at startup
-  await seedFirestoreIfNeeded();
 
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
@@ -725,10 +1163,10 @@ async function startServer() {
 
   if (!process.env.VERCEL) {
     app.listen(PORT, "0.0.0.0", () => {
-      console.log(`ðŸš€ Notsopedia Hub backend server booted successfully on port ${PORT}`);
+      console.log(`🚀 Notsopedia Hub backend server booted successfully on port ${PORT}`);
     });
   } else {
-    console.log("â˜ï¸ Running on Vercel serverless environment. Dynamic port binding skipped.");
+    console.log("☁️ Running on Vercel serverless environment. Dynamic port binding skipped.");
   }
 }
 
@@ -737,6 +1175,11 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
+
+
+
+
+
 
 
 

@@ -78,3 +78,29 @@ export interface SimulatorState {
   currentLine: number;
   isExecuting: boolean;
 }
+
+export interface SignedInUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  institution: string;
+  isAdmin: boolean;
+}
+
+export interface SystemConfig {
+  announcement: string;
+  announcementActive: boolean;
+  enableSubmissions: boolean;
+  enableSimulator?: boolean;
+}
+
+export type AIMode = "news-gk" | "notes-expert" | "exam-prep";
+
+export interface AIChatMessage {
+  sender: "user" | "ai";
+  text: string;
+  sources?: Array<{ title: string; uri: string }>;
+  timestamp: string;
+}
+
