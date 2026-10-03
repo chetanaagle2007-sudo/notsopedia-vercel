@@ -7,8 +7,8 @@ import fs from "fs";
 // Load environment variables
 dotenv.config({ path: ".env.local" });
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
   console.warn("?? Supabase environment variables are missing. Supabase backend will be unavailable.");
@@ -1138,11 +1138,6 @@ app.post("/api/ai/ask", async (req, res) => {
   }
 });
 
-// API Health Check
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", supabase: Boolean(supabase), time: new Date().toISOString() });
-});
-
 // Setup Vite or Production Static Serving
 async function startServer() {
 
@@ -1175,6 +1170,9 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
+
+
+
 
 
 
