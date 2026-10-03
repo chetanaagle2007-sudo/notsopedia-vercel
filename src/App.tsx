@@ -28,9 +28,10 @@ import { NoteEditModal } from "./components/admin/NoteEditModal";
 
 // Auth Components
 import { AuthModal } from "./components/auth/AuthModal";
+import { AuthFlowPage } from "./components/auth/AuthFlowPage";
 import { supabase } from "./supabase";
 
-export default function App() {
+function NotsopediaApp() {
   // Navigation & View State
   const [activeTab, setActiveTab] = useState<"explorer" | "ai-tutor" | "admin-portal">("explorer");
   const [userNotes, setUserNotes] = useState<UserNote[]>([]);
@@ -1026,17 +1027,20 @@ ${note.content || "No text content was provided."}
     </div>
   );
 }
+function App() {
+  const authPath = window.location.pathname;
 
+  if (authPath === "/auth/callback") {
+    return <AuthFlowPage mode="callback" />;
+  }
 
+  if (authPath === "/auth/reset-password") {
+    return <AuthFlowPage mode="reset-password" />;
+  }
 
+  return <NotsopediaApp />;
+}
 
-
-
-
-
-
-
-
-
+export default App;
 
 
