@@ -1,0 +1,18 @@
+{
+  "name": "Notsopedia - Study Vault & AI Tutor",
+  "short_name": "Notsopedia",
+  "description": "Collaborative study notes and AI Tutor workspace.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#059669",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
