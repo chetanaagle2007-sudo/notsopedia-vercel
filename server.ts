@@ -18,7 +18,7 @@ const supabase = supabaseUrl && supabaseKey
   ? createClient(supabaseUrl, supabaseKey)
   : null;
 
-console.log("🔑 [SYSTEM CONFIG] Standalone Server Initialized.");
+console.log("ðŸ”‘ [SYSTEM CONFIG] Standalone Server Initialized.");
 
 const app = express();
 const PORT = 3000;
@@ -52,8 +52,8 @@ const DEFAULT_UNIVERSAL_NOTES = [
   },
   {
     id: "univ-note-2",
-    title: "The Schrödinger Equation & Wave Functions Demystified",
-    content: "The Schrödinger Equation represents the cornerstone of modern quantum mechanics, describing how the quantum state of a physical system changes over time.\n\n### Time-Independent Schrödinger Equation\n$$\\hat{H}\\psi = E\\psi$$\n- $\\hat{H}$ is the Hamiltonian Operator (representing total energy).\n- $\\psi$ is the Wave Function (describes spatial probability amplitude).\n- $E$ is the total energy eigenvalue.\n\n### Interpretations of the Wave Function\nMax Born proposed that the square of the magnitude of the wave function, $|\\psi(x)|^2$, represents the probability density of finding a particle at a given coordinate $x$ at a specific time.\n\n- **Normalisation**: The probability of finding the particle *somewhere* in the universe must sum to 1.\n$$\\int_{-\\infty}^{\\infty} |\\psi(x)|^2 dx = 1$$",
+    title: "The SchrÃ¶dinger Equation & Wave Functions Demystified",
+    content: "The SchrÃ¶dinger Equation represents the cornerstone of modern quantum mechanics, describing how the quantum state of a physical system changes over time.\n\n### Time-Independent SchrÃ¶dinger Equation\n$$\\hat{H}\\psi = E\\psi$$\n- $\\hat{H}$ is the Hamiltonian Operator (representing total energy).\n- $\\psi$ is the Wave Function (describes spatial probability amplitude).\n- $E$ is the total energy eigenvalue.\n\n### Interpretations of the Wave Function\nMax Born proposed that the square of the magnitude of the wave function, $|\\psi(x)|^2$, represents the probability density of finding a particle at a given coordinate $x$ at a specific time.\n\n- **Normalisation**: The probability of finding the particle *somewhere* in the universe must sum to 1.\n$$\\int_{-\\infty}^{\\infty} |\\psi(x)|^2 dx = 1$$",
     subjectName: "Advanced Quantum Mechanics",
     subjectCode: "PHYS-402",
     topicName: "Quantum Foundations",
@@ -79,7 +79,7 @@ const DEFAULT_UNIVERSAL_NOTES = [
 ];
 
 const DEFAULT_CONFIG = {
-  announcement: "🎓 Welcome to the new Notsopedia Universal Hub! Download community notes, access the Live AI Search, and share research notes permanently.",
+  announcement: "ðŸŽ“ Welcome to the new Notsopedia Universal Hub! Download community notes, access the Live AI Search, and share research notes permanently.",
   announcementActive: true,
   enableSimulator: false,
   enableSubmissions: true
@@ -156,6 +156,63 @@ const createRequestSupabase = (req: import('express').Request) => {
 // ----------------- API ENDPOINTS -----------------
 
 // 1. GET ALL NOTES (Supabase)
+app.get("/api/admin/users", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+
+    if (!requestSupabase) {
+      return res.status(401).json({
+        error: "Authentication is required."
+      });
+    }
+
+    const {
+      data: { user },
+      error: userError
+    } = await requestSupabase.auth.getUser();
+
+    if (userError || !user) {
+      return res.status(401).json({
+        error: "Authentication is required."
+      });
+    }
+
+    const { data: adminProfile, error: adminError } = await requestSupabase
+      .from("users")
+      .select("is_admin")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (adminError) {
+      console.error("Admin verification error:", adminError);
+      return res.status(500).json({
+        error: "Unable to verify administrator privileges."
+      });
+    }
+
+    if (!adminProfile?.is_admin) {
+      return res.status(403).json({
+        error: "Administrator privileges are required."
+      });
+    }
+
+    const { data, error } = await requestSupabase.rpc("admin_list_users");
+
+    if (error) {
+      console.error("Admin user list error:", error);
+      return res.status(500).json({
+        error: "Unable to load users."
+      });
+    }
+
+    return res.json(data ?? []);
+  } catch (error) {
+    console.error("GET /api/admin/users error:", error);
+    return res.status(500).json({
+      error: "Failed to load administrator user data."
+    });
+  }
+});
 app.get("/api/notes", async (req, res) => {
   if (!supabase) {
     return res.status(503).json({ error: "Supabase is not configured." });
@@ -495,6 +552,25 @@ app.delete("/api/notes/:id", async (req, res) => {
       });
     }
 
+    const { data: adminProfile, error: adminError } = await requestSupabase
+      .from("users")
+      .select("is_admin")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (adminError) {
+      console.error("Admin authorization lookup failed:", adminError);
+      return res.status(500).json({
+        error: "Unable to verify administrator privileges."
+      });
+    }
+
+    if (!adminProfile?.is_admin) {
+      return res.status(403).json({
+        error: "Administrator privileges are required to delete study notes."
+      });
+    }
+
     const { data, error } = await requestSupabase
       .from("notes")
       .delete()
@@ -564,6 +640,25 @@ app.put("/api/notes/:id", async (req, res) => {
       console.error("Supabase authentication failed:", authError);
       return res.status(401).json({
         error: "Your Supabase session is invalid or expired. Please sign in again."
+      });
+    }
+
+    const { data: adminProfile, error: adminError } = await requestSupabase
+      .from("users")
+      .select("is_admin")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (adminError) {
+      console.error("Admin authorization lookup failed:", adminError);
+      return res.status(500).json({
+        error: "Unable to verify administrator privileges."
+      });
+    }
+
+    if (!adminProfile?.is_admin) {
+      return res.status(403).json({
+        error: "Administrator privileges are required to moderate study notes."
       });
     }
 
@@ -1158,10 +1253,10 @@ async function startServer() {
 
   if (!process.env.VERCEL) {
     app.listen(PORT, "0.0.0.0", () => {
-      console.log(`🚀 Notsopedia Hub backend server booted successfully on port ${PORT}`);
+      console.log(`ðŸš€ Notsopedia Hub backend server booted successfully on port ${PORT}`);
     });
   } else {
-    console.log("☁️ Running on Vercel serverless environment. Dynamic port binding skipped.");
+    console.log("â˜ï¸ Running on Vercel serverless environment. Dynamic port binding skipped.");
   }
 }
 
@@ -1170,15 +1265,3 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
-
-
-
-
-
-
-
-
-
-
-
-

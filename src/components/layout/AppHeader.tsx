@@ -20,6 +20,7 @@ interface AppHeaderProps {
   setActiveTab: (tab: "explorer" | "ai-tutor" | "admin-portal") => void;
   signedInUser: SignedInUser | null;
   onOpenAuthModal: (isAdmin?: boolean) => void;
+  onAdminNavigation: () => void;
   onSignOut: () => void;
   onDownloadPPTX: () => void;
   isGeneratingPPTX: boolean;
@@ -36,6 +37,7 @@ export function AppHeader({
   setActiveTab,
   signedInUser,
   onOpenAuthModal,
+  onAdminNavigation,
   onSignOut,
   onDownloadPPTX,
   isGeneratingPPTX,
@@ -108,17 +110,19 @@ export function AppHeader({
             <span>AI Tutor</span>
           </button>
 
-          <button
-            onClick={() => setActiveTab("admin-portal")}
+          {signedInUser?.isAdmin && (
+            <button
+              onClick={onAdminNavigation}
             className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center space-x-1.5 ${
               activeTab === "admin-portal"
                 ? "bg-amber-500 text-slate-950 shadow-xs font-bold"
                 : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-700/30"
             }`}
-          >
-            <Shield className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-            <span>Admin</span>
-          </button>
+            >
+              <Shield className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+              <span>Admin</span>
+            </button>
+          )}
         </nav>
 
         {/* Global actions: PPTX, Clock, Theme, Profile */}
