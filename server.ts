@@ -196,7 +196,7 @@ app.get("/api/admin/users", async (req, res) => {
       });
     }
 
-    const { data, error } = await requestSupabase.rpc("admin_list_users");
+    const { data, error } = await requestSupabase.rpc("admin_list_users_with_names");
 
     if (error) {
       console.error("Admin user list error:", error);
@@ -1265,3 +1265,4 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
+

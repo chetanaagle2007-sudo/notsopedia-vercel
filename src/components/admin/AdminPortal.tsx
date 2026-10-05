@@ -4,6 +4,7 @@ import { SignedInUser, SystemConfig, UserNote } from "../../types";
 
 interface AdminUser {
   id: string;
+  name: string;
   email: string;
   role: string;
   institution: string;
@@ -120,6 +121,7 @@ export function AdminPortal({
 
     return adminUsers.filter((user) =>
       [
+        user.name,
         user.email,
         user.role,
         user.institution,
@@ -315,9 +317,7 @@ export function AdminPortal({
 
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-semibold text-sm text-slate-900 dark:text-white break-all">
-                            {user.email}
-                          </p>
+                          <p className="font-semibold text-sm text-slate-900 dark:text-white break-all">{user.name || "Unnamed user"}</p><p className="text-xs text-slate-500 dark:text-slate-400 break-all mt-0.5">{user.email}</p>
 
                           {user.is_admin && (
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
@@ -572,3 +572,6 @@ export function AdminPortal({
     </div>
   );
 }
+
+
+
