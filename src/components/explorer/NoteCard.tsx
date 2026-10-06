@@ -17,6 +17,7 @@ interface NoteCardProps {
   note: UserNote;
   onLike: (id: string) => void;
   isLiked: boolean;
+  isLikePending?: boolean;
   onRead: (note: UserNote) => void;
   onDownload: (note: UserNote) => void;
   onEdit?: (note: UserNote) => void;
@@ -29,6 +30,7 @@ export function NoteCard({
   note,
   onLike,
   isLiked,
+  isLikePending = false,
   onRead,
   onDownload,
   onEdit,
@@ -178,8 +180,12 @@ export function NoteCard({
         <div className="flex items-center space-x-1.5 shrink-0">
           {/* Like button */}
           <button
+            type="button"
+            disabled={isLikePending}
             onClick={() => onLike(note.id)}
-            className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-rose-300 dark:hover:border-rose-800 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50/50 dark:hover:bg-rose-950/30 text-xs font-semibold flex items-center space-x-1 transition shadow-xs"
+            className={`px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-rose-300 dark:hover:border-rose-800 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50/50 dark:hover:bg-rose-950/30 text-xs font-semibold flex items-center space-x-1 transition shadow-xs ${
+              isLikePending ? "opacity-60 cursor-not-allowed" : ""
+            }`}
             title={isLiked ? "Unlike this note" : "Like this note"}
           >
             <Heart className={`h-3 w-3 ${isLiked ? "text-rose-500" : "text-slate-400"}`} fill={isLiked ? "#f43f5e" : "none"} stroke={isLiked ? "#f43f5e" : "currentColor"} />

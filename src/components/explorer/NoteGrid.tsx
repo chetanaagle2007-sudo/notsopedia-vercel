@@ -15,6 +15,7 @@ interface NoteGridProps {
   onAskAI: () => void;
   onLike: (id: string) => void;
   likedNoteIds: Set<string>;
+  pendingLikeIds?: Set<string>;
   onRead: (note: UserNote) => void;
   onDownload: (note: UserNote) => void;
   onEdit?: (note: UserNote) => void;
@@ -32,6 +33,7 @@ export function NoteGrid({
   onAskAI,
   onLike,
   likedNoteIds,
+  pendingLikeIds,
   onRead,
   onDownload,
   onEdit,
@@ -76,6 +78,7 @@ export function NoteGrid({
               note={note}
               onLike={onLike}
               isLiked={likedNoteIds.has(note.id)}
+              isLikePending={pendingLikeIds?.has(note.id)}
               onRead={onRead}
               onDownload={onDownload}
               onEdit={onEdit}

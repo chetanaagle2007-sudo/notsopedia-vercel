@@ -36,6 +36,7 @@ function NotsopediaApp() {
   const [activeTab, setActiveTab] = useState<"explorer" | "ai-tutor" | "admin-portal">("explorer");
   const [userNotes, setUserNotes] = useState<UserNote[]>([]);
   const [likedNoteIds, setLikedNoteIds] = useState<Set<string>>(() => new Set());
+  const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(() => new Set());
   const [isLoadingNotes, setIsLoadingNotes] = useState<boolean>(false);
   const [notesSearchQuery, setNotesSearchQuery] = useState<string>("");
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>("All Subjects");
@@ -128,6 +129,7 @@ function NotsopediaApp() {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
         setSignedInUser(null);
+        setLikedNoteIds(new Set());
         return;
       }
 
@@ -177,7 +179,7 @@ function NotsopediaApp() {
 
       if (sessionError || !session?.access_token) {
         setLikedNoteIds(new Set());
-    setActiveTab('notes');
+
         return;
       }
 
@@ -197,7 +199,7 @@ function NotsopediaApp() {
     } catch (err) {
       console.error("Failed to load liked notes:", err);
       setLikedNoteIds(new Set());
-    setActiveTab('notes');
+
     }
   };
 
@@ -267,6 +269,11 @@ function NotsopediaApp() {
 
   // Like / unlike note
   const handleLikeNote = async (id: string) => {
+    // Ignore additional clicks on the same note while its request is pending
+    if (pendingLikeIds.has(id)) {
+      return;
+    }
+
     try {
       const {
         data: { session },
@@ -278,42 +285,108 @@ function NotsopediaApp() {
         return;
       }
 
-      const res = await fetch(`/api/notes/${id}/like`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${session.access_token}`
-        }
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => null);
-        throw new Error(errorData?.error || "Failed to update note like.");
+      const targetNote = userNotes.find((n) => n.id === id);
+      if (!targetNote) {
+        return;
       }
 
-      const result = await res.json();
+      const previousLiked = likedNoteIds.has(id);
+      const previousLikes = targetNote.likes || 0;
+      const nextLiked = !previousLiked;
+      const nextLikes = Math.max(0, previousLiked ? previousLikes - 1 : previousLikes + 1);
+
+      // Track in-flight request
+      setPendingLikeIds((prev) => new Set(prev).add(id));
+
+      // Optimistic update: heart and like count immediately
+      setLikedNoteIds((prev) => {
+        const next = new Set(prev);
+        if (nextLiked) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
+        return next;
+      });
 
       setUserNotes((prev) =>
         prev.map((note) =>
-          note.id === result.noteId
+          note.id === id
             ? {
                 ...note,
-                likes: result.likes
+                likes: nextLikes
               }
             : note
         )
       );
 
-      setLikedNoteIds((prev) => {
-        const next = new Set(prev);
+      try {
+        const res = await fetch(`/api/notes/${id}/like`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${session.access_token}`
+          }
+        });
 
-        if (result.liked) {
-          next.add(result.noteId);
-        } else {
-          next.delete(result.noteId);
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => null);
+          throw new Error(errorData?.error || "Failed to update note like.");
         }
 
-        return next;
-      });
+        const result = await res.json();
+
+        // Synchronize exact server liked state and like count
+        setUserNotes((prev) =>
+          prev.map((note) =>
+            note.id === result.noteId
+              ? {
+                  ...note,
+                  likes: Number(result.likes)
+                }
+              : note
+          )
+        );
+
+        setLikedNoteIds((prev) => {
+          const next = new Set(prev);
+          if (result.liked) {
+            next.add(result.noteId);
+          } else {
+            next.delete(result.noteId);
+          }
+          return next;
+        });
+      } catch (reqErr) {
+        // Rollback to exact previous liked state and like count on failure
+        setUserNotes((prev) =>
+          prev.map((note) =>
+            note.id === id
+              ? {
+                  ...note,
+                  likes: previousLikes
+                }
+              : note
+          )
+        );
+
+        setLikedNoteIds((prev) => {
+          const next = new Set(prev);
+          if (previousLiked) {
+            next.add(id);
+          } else {
+            next.delete(id);
+          }
+          return next;
+        });
+
+        throw reqErr;
+      } finally {
+        setPendingLikeIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
     } catch (err) {
       console.error("Error toggling like on server:", err);
       showToast(
@@ -1230,6 +1303,7 @@ ${note.content || "No text content was provided."}
                 }}
                 onLike={handleLikeNote}
                 likedNoteIds={likedNoteIds}
+                pendingLikeIds={pendingLikeIds}
                 onRead={setViewingNote}
                 onDownload={handleDownloadNoteMarkdown}
                 onEdit={setEditingNote}
