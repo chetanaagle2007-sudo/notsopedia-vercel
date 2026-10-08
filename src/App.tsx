@@ -658,9 +658,18 @@ function NotsopediaApp() {
     }
 
     try {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
       const res = await fetch("/api/ai/ask", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           question: userMsg,
           mode: aiMode,
@@ -680,7 +689,17 @@ function NotsopediaApp() {
           }
         ]);
       } else {
-        throw new Error("Failed to fetch response");
+        const errText = res.status === 401
+          ? "🔒 Sign-in required: Please sign in to your account to use the AI Assistant."
+          : "⚠️ AI service error: Failed to fetch response.";
+        setAiChatHistory((prev) => [
+          ...prev,
+          {
+            sender: "ai",
+            text: errText,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          }
+        ]);
       }
     } catch (err) {
       console.error("AI Assistant error:", err);
@@ -688,7 +707,7 @@ function NotsopediaApp() {
         ...prev,
         {
           sender: "ai",
-          text: "Ã¢Å¡Â Ã¯Â¸Â Offline academic discovery engine connection failed. Please ensure the backend server is reachable.",
+          text: "⚠️ Offline academic discovery engine connection failed. Please ensure the backend server is reachable.",
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
         }
       ]);

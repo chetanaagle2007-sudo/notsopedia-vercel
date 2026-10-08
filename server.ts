@@ -18,6 +18,11 @@ const supabase = supabaseUrl && supabaseKey
   ? createClient(supabaseUrl, supabaseKey)
   : null;
 
+// MIND-AI Service Configuration (Phase 1: internal service-to-service contract)
+// Server-only: Never prefix with VITE_ and never expose to client bundles or browser responses.
+const MIND_AI_SERVICE_URL = (process.env.MIND_AI_SERVICE_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+const MIND_AI_SERVICE_KEY = process.env.MIND_AI_SERVICE_KEY || "";
+
 console.log("ðŸ”‘ [SYSTEM CONFIG] Standalone Server Initialized.");
 
 const app = express();
@@ -1006,6 +1011,48 @@ app.post("/api/notes/reset", async (req, res) => {
   }
 });
 // ----------------- INTELLIGENT OFFLINE ACADEMIC GENERATOR -----------------
+function findRelevantNotes(question: string, allNotes: any[]): any[] {
+  const stopWords = new Set([
+    "what", "what's", "what is", "why", "how", "when", "where",
+    "which", "who", "explain", "define", "give", "tell", "about",
+    "the", "this", "that", "with", "from", "into", "for", "and",
+    "are", "is", "was", "were", "can", "you", "please", "notes",
+    "note", "make", "write", "show", "me"
+  ]);
+
+  const questionTerms = question
+    .toLowerCase()
+    .replace(/[^a-z0-9+#.\s-]/g, " ")
+    .split(/\s+/)
+    .filter((word: string) => word.length >= 3 && !stopWords.has(word));
+
+  const scoredNotes = allNotes
+    .map((note: any) => {
+      const title = String(note.title || "");
+      const content = String(note.content || "");
+      const subject = String(note.subjectName || note.subject_name || "");
+      const topic = String(note.topicName || note.topic_name || "");
+
+      const searchable = `${title} ${content} ${subject} ${topic}`.toLowerCase();
+
+      let score = 0;
+
+      for (const term of questionTerms) {
+        if (title.toLowerCase().includes(term)) score += 8;
+        if (subject.toLowerCase().includes(term)) score += 6;
+        if (topic.toLowerCase().includes(term)) score += 6;
+        if (content.toLowerCase().includes(term)) score += 2;
+      }
+
+      return { note, score };
+    })
+    .filter((item: any) => item.score > 0)
+    .sort((a: any, b: any) => b.score - a.score)
+    .slice(0, 6);
+
+  return scoredNotes.map((item: any) => item.note);
+}
+
 async function generateAiResponseWithGemini(
   question: string,
   mode: string,
@@ -1026,46 +1073,7 @@ async function generateAiResponseWithGemini(
   // This keeps the Gemini context focused instead of sending
   // the entire notes database.
   // ------------------------------------------------------------
-
-  const stopWords = new Set([
-    "what", "what's", "what is", "why", "how", "when", "where",
-    "which", "who", "explain", "define", "give", "tell", "about",
-    "the", "this", "that", "with", "from", "into", "for", "and",
-    "are", "is", "was", "were", "can", "you", "please", "notes",
-    "note", "make", "write", "show", "me"
-  ]);
-
-  const questionTerms = question
-    .toLowerCase()
-    .replace(/[^a-z0-9+#.\s-]/g, " ")
-    .split(/\s+/)
-    .filter((word: string) => word.length >= 3 && !stopWords.has(word));
-
-  const scoredNotes = allNotes
-    .map((note: any) => {
-      const title = String(note.title || "");
-      const content = String(note.content || "");
-      const subject = String(note.subjectName || "");
-      const topic = String(note.topicName || "");
-
-      const searchable = `${title} ${content} ${subject} ${topic}`.toLowerCase();
-
-      let score = 0;
-
-      for (const term of questionTerms) {
-        if (title.toLowerCase().includes(term)) score += 8;
-        if (subject.toLowerCase().includes(term)) score += 6;
-        if (topic.toLowerCase().includes(term)) score += 6;
-        if (content.toLowerCase().includes(term)) score += 2;
-      }
-
-      return { note, score };
-    })
-    .filter((item: any) => item.score > 0)
-    .sort((a: any, b: any) => b.score - a.score)
-    .slice(0, 6);
-
-  const relevantNotes = scoredNotes.map((item: any) => item.note);
+  const relevantNotes = findRelevantNotes(question, allNotes);
 
   // Limit note size so very large notes don't overwhelm the model.
   const notesContext = relevantNotes.length
@@ -1181,48 +1189,173 @@ Now answer the user's question.
     sources
   };
 }
-// 8. STANDALONE LOCAL AI DISCOVERY & EXPLAINER (No Google Studio API Key Required)
+// 8. SECURE AI DISCOVERY & GATEWAY TO MIND-AI (With Gemini Fallback)
 app.post("/api/ai/ask", async (req, res) => {
   try {
     const { question, mode } = req.body;
-    if (!question) {
+    if (!question || typeof question !== "string" || !question.trim()) {
       return res.status(400).json({ error: "Question is required" });
     }
 
-    // Fetch notes from Supabase for the local academic engine.
-    // Public note reads are allowed by the notes table RLS policy.
-    let notesList: any[] = [];
+    // 1. Authenticate user via request-scoped Supabase client
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) {
+      return res.status(401).json({
+        error: "Authentication is required."
+      });
+    }
 
-    if (supabase) {
-      try {
-        const { data: supabaseNotes, error: notesError } = await supabase
-          .from("notes")
-          .select("*");
+    const {
+      data: { user },
+      error: userError
+    } = await requestSupabase.auth.getUser();
 
-        if (notesError) {
-          console.error("Supabase AI notes fetch failed:", notesError);
-        } else {
-          notesList = (supabaseNotes || []).map((note: any) => ({
-            ...note,
-            subjectName: note.subject_name,
-            topicName: note.topic_name,
-            uploaderEmail: note.uploader_email,
-            uploadedAt: note.uploaded_at,
-            updatedAt: note.updated_at,
-            ownerId: note.owner_id
-          }));
-        }
-      } catch (dbErr) {
-        console.error("Supabase AI notes fetch failed:", dbErr);
+    if (userError || !user) {
+      return res.status(401).json({
+        error: "Authentication is required."
+      });
+    }
+
+    // 2. Resolve safe user metadata without leaking credentials
+    let userRole = (user.user_metadata?.role as string) || "Student";
+    const institution = (user.user_metadata?.institution as string) || undefined;
+
+    try {
+      const { data: userProfile } = await requestSupabase
+        .from("users")
+        .select("is_admin")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (userProfile?.is_admin) {
+        userRole = "Admin";
       }
+    } catch {
+      // Non-fatal, retain default role
+    }
+
+    // 3. Authorized note retrieval using request-scoped Supabase client under RLS
+    let notesList: any[] = [];
+    try {
+      const { data: supabaseNotes, error: notesError } = await requestSupabase
+        .from("notes")
+        .select("*");
+
+      if (notesError) {
+        console.error("Supabase AI notes fetch failed:", notesError);
+      } else if (supabaseNotes && supabaseNotes.length > 0) {
+        notesList = supabaseNotes.map((note: any) => ({
+          ...note,
+          subjectName: note.subject_name || note.subjectName,
+          topicName: note.topic_name || note.topicName,
+          uploaderEmail: note.uploader_email,
+          uploadedAt: note.uploaded_at,
+          updatedAt: note.updated_at,
+          ownerId: note.owner_id
+        }));
+      }
+    } catch (dbErr) {
+      console.error("Supabase AI notes fetch failed:", dbErr);
     }
 
     if (notesList.length === 0) {
       notesList = readNotesFromFile();
     }
+
+    // 4. Select relevant notes
+    const relevantNotes = findRelevantNotes(question, notesList);
+    const sources = relevantNotes.map((note: any) => ({
+      title: String(note.title || "Untitled Note"),
+      uri: note.id ? `#note-${note.id}` : "#notes"
+    }));
+
+    // 5. Preferred path: Forward to MIND-AI /chat
+    const MIND_AI_TIMEOUT_MS = parseInt(process.env.MIND_AI_TIMEOUT_MS || "15000", 10);
+    const mindAiNotes = relevantNotes.map((note: any) => ({
+      id: note.id ? String(note.id) : undefined,
+      title: note.title ? String(note.title) : undefined,
+      content: note.content ? String(note.content).slice(0, 7000) : undefined,
+      subject: note.subjectName || note.subject_name || undefined,
+      topic: note.topicName || note.topic_name || undefined,
+      metadata: {}
+    }));
+
+    const mindAiPayload = {
+      message: question,
+      history: Array.isArray(req.body.history) ? req.body.history : [],
+      session_id: req.body.sessionId || req.body.session_id || undefined,
+      context: {
+        user_id: user.id,
+        user_role: userRole,
+        institution,
+        mode: mode || "notes-expert",
+        relevant_notes: mindAiNotes
+      }
+    };
+
+    let mindAiSuccess = false;
+    let mindAiData: any = null;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), MIND_AI_TIMEOUT_MS);
+
+    try {
+      const mindAiRes = await fetch(`${MIND_AI_SERVICE_URL}/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY
+        },
+        body: JSON.stringify(mindAiPayload),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      // Do NOT silently fall back on service authentication failures (401/403)
+      if (mindAiRes.status === 401 || mindAiRes.status === 403) {
+        console.error(`[MIND-AI GATEWAY] Service authentication failed with HTTP ${mindAiRes.status}.`);
+        return res.status(502).json({
+          error: "MIND-AI service authentication failed"
+        });
+      }
+
+      if (mindAiRes.ok) {
+        const json = await mindAiRes.json();
+        if (json && typeof json.response === "string") {
+          mindAiData = json;
+          mindAiSuccess = true;
+        } else {
+          console.warn("[MIND-AI GATEWAY] MIND-AI returned 200 with invalid response schema. Falling back to Gemini.");
+        }
+      } else {
+        console.warn(`[MIND-AI GATEWAY] MIND-AI returned HTTP ${mindAiRes.status}. Falling back to Gemini.`);
+      }
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      const isTimeout = err.name === "AbortError" || err.code === "ABORT_ERR";
+      if (isTimeout) {
+        console.warn(`[MIND-AI GATEWAY] MIND-AI request timed out after ${MIND_AI_TIMEOUT_MS}ms. Falling back to Gemini.`);
+      } else {
+        console.warn(`[MIND-AI GATEWAY] MIND-AI connection error (${err.message || err}). Falling back to Gemini.`);
+      }
+    }
+
+    if (mindAiSuccess && mindAiData) {
+      return res.json({
+        text: mindAiData.response,
+        sources,
+        mode: mindAiData.mode || mode,
+        model: mindAiData.model,
+        provider: mindAiData.provider
+      });
+    }
+
+    // 6. Fallback path: Existing Gemini AI Tutor
+    console.log("[MIND-AI GATEWAY] Falling back to Gemini AI Tutor implementation.");
     const result = await generateAiResponseWithGemini(question, mode, notesList);
 
-    res.json({
+    return res.json({
       text: result.text,
       sources: result.sources
     });
@@ -1264,5 +1397,6 @@ if (!process.env.VERCEL) {
   startServer();
 }
 
+export { findRelevantNotes, generateAiResponseWithGemini };
 export default app;
 
