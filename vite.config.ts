@@ -23,5 +23,22 @@ export default defineConfig(() => {
         ],
       },
     },
+    build: {
+      // Raise the warning threshold slightly — pptxgenjs is already code-split,
+      // so the remaining chunks are justified in size.
+      chunkSizeWarningLimit: 700,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            // React runtime — changes rarely, benefits most from long-term caching
+            'vendor-react': ['react', 'react-dom'],
+            // Supabase client — large but stable dependency
+            'vendor-supabase': ['@supabase/supabase-js'],
+            // Lucide icon library — tree-shaken but still sizeable
+            'vendor-lucide': ['lucide-react'],
+          },
+        },
+      },
+    },
   };
 });

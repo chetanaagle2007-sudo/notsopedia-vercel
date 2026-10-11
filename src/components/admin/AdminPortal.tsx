@@ -144,7 +144,7 @@ export function AdminPortal({
   const filteredNotes = useMemo(() => {
     const query = noteSearch.trim().toLowerCase();
     if (!query) return notes;
-    return notes.filter((note) => [note.title, note.subject, note.topic, note.uploaderName].filter(Boolean).some((value) => String(value).toLowerCase().includes(query)));
+    return notes.filter((note) => [note.title, note.subjectName, note.topicName, note.uploaderName].filter(Boolean).some((value) => String(value).toLowerCase().includes(query)));
   }, [notes, noteSearch]);
 
   return (
@@ -491,15 +491,15 @@ export function AdminPortal({
                     <h3 className="font-semibold text-slate-900 dark:text-white truncate">
                       {note.title || "Untitled Note"}
                     </h3>
-                    {note.subject && (
+                    {note.subjectName && (
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                        {note.subject}
+                        {note.subjectName}
                       </span>
                     )}
                   </div>
 
                   <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 flex flex-wrap gap-x-3 gap-y-1">
-                    {note.topic && <span>Topic: {note.topic}</span>}
+                    {note.topicName && <span>Topic: {note.topicName}</span>}
                     {note.uploaderName && <span>By: {note.uploaderName}</span>}
                   </div>
 

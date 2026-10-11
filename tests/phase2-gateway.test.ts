@@ -366,9 +366,12 @@ await test("11. MIND-AI timeout triggers fallback to Gemini", async () => {
     { Authorization: "Bearer valid-jwt-token" }
   );
 
-  // Fallback path attempted (either succeeds if GEMINI_API_KEY is present or gracefully reports 500 when offline)
+  // Fallback path attempted:
+  // - 200: Gemini succeeded (live key present in test environment)
+  // - 500: Gemini failed with a generic internal error
+  // - 503: GEMINI_API_KEY is not configured in the test environment (expected in CI)
   // Key verification: Gateway aborted the MIND-AI request on timeout
-  assert(res.status === 200 || res.status === 500);
+  assert(res.status === 200 || res.status === 500 || res.status === 503);
   mindAiDelayMs = 0;
 });
 
@@ -382,8 +385,11 @@ await test("12. MIND-AI HTTP 500 error triggers fallback to Gemini", async () =>
     { Authorization: "Bearer valid-jwt-token" }
   );
 
-  // 5xx from MIND-AI triggers fallback to Gemini
-  assert(res.status === 200 || res.status === 500);
+  // 5xx from MIND-AI triggers fallback to Gemini:
+  // - 200: Gemini succeeded
+  // - 500: Gemini failed with a generic internal error
+  // - 503: GEMINI_API_KEY is not configured in the test environment (expected in CI)
+  assert(res.status === 200 || res.status === 500 || res.status === 503);
   mindAiStatusCode = 200;
 });
 

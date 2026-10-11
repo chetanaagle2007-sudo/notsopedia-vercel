@@ -1,17 +1,17 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
-  Book,
+  BookOpen,
   Download,
   X,
   FileText,
   ExternalLink,
   Calendar,
   User,
-  Tag,
-  Check
+  Tag
 } from "lucide-react";
 import { UserNote } from "../../types";
 import { MarkdownRenderer } from "../common/MarkdownRenderer";
+import { UI_LABELS } from "../../constants/labels";
 
 interface NoteReaderModalProps {
   note: UserNote | null;
@@ -26,6 +26,20 @@ export function NoteReaderModal({
 }: NoteReaderModalProps) {
   const [fontSize, setFontSize] = useState<"normal" | "large" | "xlarge">("normal");
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    if (note) {
+      window.addEventListener("keydown", handleKeyDown);
+    }
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [note, onClose]);
+
   if (!note) return null;
 
   const formattedDate = note.uploadedAt
@@ -34,20 +48,25 @@ export function NoteReaderModal({
         month: "long",
         day: "numeric"
       })
-    : "Unknown Date";
+    : "Recent";
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 md:p-6 overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 md:p-6 overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${UI_LABELS.reader.title}: ${note.title}`}
+    >
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-4xl w-full shadow-2xl flex flex-col max-h-[92vh] overflow-hidden transition-colors">
         {/* Top Control Bar */}
-        <div className="px-6 py-4 bg-slate-50/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400">
-              <Book className="h-4 w-4" />
+        <div className="px-6 py-3.5 bg-slate-50/90 dark:bg-slate-800/90 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center space-x-2.5 truncate">
+            <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 shrink-0">
+              <BookOpen className="h-4 w-4" />
             </div>
-            <div>
+            <div className="truncate">
               <span className="font-serif italic font-bold text-base text-slate-900 dark:text-white">
-                Notsopedia Reader
+                {UI_LABELS.reader.title}
               </span>
               <span className="hidden sm:inline text-xs text-slate-400 dark:text-slate-500 ml-2">
                 • {note.subjectCode || "GEN-ACAD"}
@@ -56,23 +75,29 @@ export function NoteReaderModal({
           </div>
 
           {/* Controls: Font Size, Download MD, Close */}
-          <div className="flex items-center space-x-2.5">
+          <div className="flex items-center space-x-2 shrink-0">
             {/* Font scaling pills */}
-            <div className="flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-0.5 text-xs font-mono">
+            <div className="flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-0.5 text-xs font-mono" role="group" aria-label="Text sizing">
               <button
+                type="button"
                 onClick={() => setFontSize("normal")}
-                className={`px-2.5 py-1 rounded-lg transition ${
+                aria-pressed={fontSize === "normal"}
+                aria-label="Standard font size"
+                className={`h-7 px-2.5 rounded-lg transition focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500 ${
                   fontSize === "normal"
                     ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold"
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                 }`}
-                title="Normal font size"
+                title="Standard font size"
               >
                 A
               </button>
               <button
+                type="button"
                 onClick={() => setFontSize("large")}
-                className={`px-2.5 py-1 rounded-lg transition ${
+                aria-pressed={fontSize === "large"}
+                aria-label="Large font size"
+                className={`h-7 px-2.5 rounded-lg transition focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500 ${
                   fontSize === "large"
                     ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold"
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -82,8 +107,11 @@ export function NoteReaderModal({
                 A+
               </button>
               <button
+                type="button"
                 onClick={() => setFontSize("xlarge")}
-                className={`px-2.5 py-1 rounded-lg transition ${
+                aria-pressed={fontSize === "xlarge"}
+                aria-label="Extra large font size"
+                className={`h-7 px-2.5 rounded-lg transition focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500 ${
                   fontSize === "xlarge"
                     ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold"
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -94,24 +122,28 @@ export function NoteReaderModal({
               </button>
             </div>
 
-            {/* Markdown export button */}
+            {/* Markdown download button */}
             <button
+              type="button"
               onClick={() => onDownloadMarkdown(note)}
-              className="px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-800 text-white hover:bg-slate-800 dark:hover:bg-slate-700 text-xs font-semibold flex items-center space-x-1.5 transition shadow-xs"
-              title="Download note formatted as Markdown"
+              className="h-8 px-3 rounded-xl bg-slate-900 dark:bg-slate-800 text-white hover:bg-slate-800 dark:hover:bg-slate-700 text-xs font-semibold flex items-center space-x-1.5 transition shadow-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500"
+              title={UI_LABELS.actions.downloadMarkdown}
+              aria-label={UI_LABELS.actions.downloadMarkdown}
             >
               <Download className="h-3.5 w-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">Export MD</span>
-              <span className="sm:hidden">MD</span>
+              <span className="hidden sm:inline">{UI_LABELS.actions.downloadMarkdown}</span>
+              <span className="sm:hidden">Markdown</span>
             </button>
 
             {/* Close */}
             <button
+              type="button"
               onClick={onClose}
-              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-              title="Close reader"
+              className="h-8 w-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500"
+              title={UI_LABELS.actions.close}
+              aria-label={UI_LABELS.actions.close}
             >
-              <X className="h-5 w-5" />
+              <X className="h-4.5 w-4.5" />
             </button>
           </div>
         </div>
@@ -177,7 +209,7 @@ export function NoteReaderModal({
                   </span>
                   {note.fileSize ? (
                     <span className="text-xs text-slate-400 dark:text-slate-500 font-mono">
-                      Attached File • {(note.fileSize / 1024).toFixed(1)} KB
+                      Attached Document • {(note.fileSize / 1024).toFixed(1)} KB
                     </span>
                   ) : null}
                 </div>
@@ -188,10 +220,10 @@ export function NoteReaderModal({
                   href={note.fileUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition flex items-center justify-center space-x-2 shrink-0 shadow-xs"
+                  className="h-9 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition flex items-center justify-center space-x-2 shrink-0 shadow-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500"
                 >
                   <ExternalLink className="h-4 w-4" />
-                  <span>Open Attached File</span>
+                  <span>{UI_LABELS.actions.openAttachment}</span>
                 </a>
               )}
             </div>
@@ -211,12 +243,14 @@ export function NoteReaderModal({
 
         {/* Footer info bar */}
         <div className="px-6 py-3 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400 shrink-0">
-          <span>Document ID: {note.id}</span>
+          <span>Document Reference: {note.subjectCode || "GEN"} • {note.id.slice(0, 8)}</span>
           <button
+            type="button"
             onClick={onClose}
-            className="px-4 py-1.5 bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 text-white rounded-xl text-xs font-semibold transition"
+            aria-label={UI_LABELS.actions.close}
+            className="h-8 px-4 bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 text-white rounded-xl text-xs font-semibold transition focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500"
           >
-            Done Reading
+            {UI_LABELS.actions.close}
           </button>
         </div>
       </div>

@@ -21,9 +21,11 @@ function CodeBlock({ code, language }: { code: string; language: string; key?: R
       <div className="flex items-center justify-between px-3 py-1.5 bg-slate-800/80 border-b border-slate-700/60 text-[11px] text-slate-400">
         <span className="uppercase font-semibold tracking-wider text-emerald-400">{language || "code"}</span>
         <button
+          type="button"
           onClick={handleCopy}
-          className="flex items-center space-x-1 px-2 py-0.5 rounded hover:bg-slate-700 text-slate-300 transition text-[10px]"
+          className="flex items-center space-x-1 px-2 py-0.5 rounded hover:bg-slate-700 text-slate-300 transition text-[10px] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-400"
           title="Copy code"
+          aria-label={copied ? "Code copied to clipboard" : "Copy code block to clipboard"}
         >
           {copied ? (
             <>

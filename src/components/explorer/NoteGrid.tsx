@@ -7,9 +7,11 @@ import { EmptyState } from "../common/EmptyState";
 
 interface NoteGridProps {
   notes: UserNote[];
+  totalNotesCount?: number;
   isLoading: boolean;
   searchQuery: string;
   selectedSubject: string;
+  filterAttachmentsOnly?: boolean;
   onClearFilters: () => void;
   onUploadNote: () => void;
   onAskAI: () => void;
@@ -25,9 +27,11 @@ interface NoteGridProps {
 
 export function NoteGrid({
   notes,
+  totalNotesCount,
   isLoading,
   searchQuery,
   selectedSubject,
+  filterAttachmentsOnly = false,
   onClearFilters,
   onUploadNote,
   onAskAI,
@@ -40,19 +44,33 @@ export function NoteGrid({
   onDelete,
   isAdmin
 }: NoteGridProps) {
+  const isFiltered = Boolean(
+    (searchQuery && searchQuery.trim()) ||
+    (selectedSubject && selectedSubject !== "All Subjects") ||
+    filterAttachmentsOnly
+  );
+
   return (
     <div className="space-y-4">
       {/* Header bar */}
       <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800 pb-3">
         <div className="flex items-center space-x-2">
           <BookOpen className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-          <h3 className="font-serif italic text-lg md:text-xl font-bold text-slate-900 dark:text-white">
-            Academic Bulletin & Peer Lectures
-          </h3>
+          <h2 className="font-serif italic text-lg md:text-xl font-bold text-slate-900 dark:text-white">
+            Curated Study Documents
+          </h2>
         </div>
-        <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
-          {isLoading ? "Syncing notes..." : `${notes.length} curated ${notes.length === 1 ? "document" : "documents"}`}
-        </span>
+        <div className="text-xs font-mono text-slate-500 dark:text-slate-400">
+          {isLoading ? (
+            "Syncing notes..."
+          ) : isFiltered && typeof totalNotesCount === "number" ? (
+            <span>
+              Showing <span className="font-bold text-emerald-600 dark:text-emerald-400">{notes.length}</span> of {totalNotesCount} {totalNotesCount === 1 ? "document" : "documents"}
+            </span>
+          ) : (
+            `${notes.length} curated ${notes.length === 1 ? "document" : "documents"}`
+          )}
+        </div>
       </div>
 
       {/* Grid content */}
@@ -66,6 +84,7 @@ export function NoteGrid({
         <EmptyState
           searchQuery={searchQuery}
           selectedSubject={selectedSubject}
+          filterAttachmentsOnly={filterAttachmentsOnly}
           onClearFilters={onClearFilters}
           onUploadNote={onUploadNote}
           onAskAI={onAskAI}
@@ -91,8 +110,3 @@ export function NoteGrid({
     </div>
   );
 }
-
-
-
-
-

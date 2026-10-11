@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
-import pptxgen from "pptxgenjs";
 import { UNIVERSAL_SUBJECTS, UniversalSubject } from "./data";
-import { UserNote, SignedInUser, SystemConfig, AIMode, AIChatMessage } from "./types";
+import { UserNote, SignedInUser, SystemConfig, AIMode, AIChatMessage, NoteSortOption } from "./types";
 
 // Layout Components
 import { AnnouncementBanner } from "./components/layout/AnnouncementBanner";
@@ -11,9 +10,13 @@ import { AppSidebar } from "./components/layout/AppSidebar";
 import { Footer } from "./components/layout/Footer";
 
 // Explorer Components
-import { ExplorerHero } from "./components/explorer/ExplorerHero";
+import { CinematicHero } from "./components/explorer/CinematicHero";
+import { NoteCarousel } from "./components/explorer/NoteCarousel";
+import { SubjectCard } from "./components/explorer/SubjectCard";
+import { NoteCard } from "./components/explorer/NoteCard";
 import { SubjectFilterBar } from "./components/explorer/SubjectFilterBar";
 import { NoteGrid } from "./components/explorer/NoteGrid";
+import { Flame, Clock, Paperclip, Sparkles, LayoutGrid, Layers, ArrowRight } from "lucide-react";
 
 // Upload & Reader Components
 import { NoteUploadModal } from "./components/upload/NoteUploadModal";
@@ -40,6 +43,9 @@ function NotsopediaApp() {
   const [isLoadingNotes, setIsLoadingNotes] = useState<boolean>(false);
   const [notesSearchQuery, setNotesSearchQuery] = useState<string>("");
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>("All Subjects");
+  const [sortBy, setSortBy] = useState<NoteSortOption>("newest");
+  const [filterAttachmentsOnly, setFilterAttachmentsOnly] = useState<boolean>(false);
+  const [explorerViewMode, setExplorerViewMode] = useState<"showcase" | "grid">("showcase");
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
   // Theme State
@@ -65,7 +71,7 @@ function NotsopediaApp() {
   const [aiChatHistory, setAiChatHistory] = useState<AIChatMessage[]>([
     {
       sender: "ai",
-      text: "Ã°Å¸â€˜â€¹ Welcome to Notsopedia Live AI Search! I can answer *any question in the world* with real-time web grounding, summarize academic textbooks, or synthesize your peer notes library directly. Ask me anything!",
+      text: "👋 Welcome to Notsopedia AI Tutor! Ask questions, explore lecture summaries, or synthesize peer study notes directly. How can I help with your studies today?",
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     }
   ]);
@@ -74,7 +80,7 @@ function NotsopediaApp() {
   // System Configuration
   const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
   const [systemConfig, setSystemConfig] = useState<SystemConfig>({
-    announcement: "Ã°Å¸Å½â€œ Welcome to the new Notsopedia Universal Hub! Download community notes, access the Live AI Search, and share research notes permanently.",
+    announcement: "🎓 Welcome to Notsopedia! Explore community study notes, collaborate with peers, and prepare for exams.",
     announcementActive: true,
     enableSubmissions: true
   });
@@ -92,9 +98,6 @@ function NotsopediaApp() {
   const [notesSuccessMessage, setNotesSuccessMessage] = useState<string>("");
   const [isGeneratingPPTX, setIsGeneratingPPTX] = useState<boolean>(false);
 
-  // Real-time Clock
-  const [currentTime, setCurrentTime] = useState<string>("");
-
   // Sync theme to document element
   useEffect(() => {
     if (theme === "dark") {
@@ -109,15 +112,8 @@ function NotsopediaApp() {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   };
 
-  // Clock & Initial Load
+  // Initial Load
   useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      setCurrentTime(now.toUTCString().replace("GMT", "UTC"));
-    };
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-
     void fetchNotes();
     void fetchSystemConfig();
 
@@ -138,7 +134,6 @@ function NotsopediaApp() {
 
     return () => {
       subscription.unsubscribe();
-      clearInterval(interval);
     };
   }, []);
 
@@ -605,7 +600,7 @@ function NotsopediaApp() {
 
     setSignedInUser(null);
     setLikedNoteIds(new Set());
-    setActiveTab('notes');
+    setActiveTab('explorer');
     showToast("Session disconnected. Now browsing in Guest mode.", "success");
   };
 
@@ -689,9 +684,28 @@ function NotsopediaApp() {
           }
         ]);
       } else {
-        const errText = res.status === 401
-          ? "🔒 Sign-in required: Please sign in to your account to use the AI Assistant."
-          : "⚠️ AI service error: Failed to fetch response.";
+        // Read the actual server error message for accurate diagnostics
+        let serverMessage = "";
+        try {
+          const errData = await res.json();
+          serverMessage = errData?.error || "";
+        } catch { /* ignore JSON parse failure */ }
+
+        let errText = "";
+        if (res.status === 401) {
+          errText = "**Sign-in required.** Please sign in to your Notsopedia account to use the AI Tutor.";
+        } else if (res.status === 502) {
+          errText = "**AI service authentication failed.** The server could not connect to MIND-AI. Please try again later or contact the administrator.";
+        } else if (res.status === 503) {
+          errText = serverMessage || "**AI service unavailable.** The AI provider is not configured on this server. Please contact the administrator.";
+        } else if (res.status === 400) {
+          errText = "**Invalid request.** Please ensure your question is not empty and try again.";
+        } else {
+          errText = serverMessage
+            ? `**AI service error (${res.status}):** ${serverMessage}`
+            : `**AI service error.** The server returned an unexpected response (HTTP ${res.status}). Please try again.`;
+        }
+
         setAiChatHistory((prev) => [
           ...prev,
           {
@@ -707,7 +721,7 @@ function NotsopediaApp() {
         ...prev,
         {
           sender: "ai",
-          text: "⚠️ Offline academic discovery engine connection failed. Please ensure the backend server is reachable.",
+          text: "**Connection failed.** Could not reach the Notsopedia server. Please check your internet connection and try again.",
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
         }
       ]);
@@ -767,9 +781,9 @@ function NotsopediaApp() {
   // PowerPoint Generator
   const handleDownloadPPTX = async () => {
     setIsGeneratingPPTX(true);
-
     try {
-      let pptxConstructor: any = pptxgen;
+      const pptxModule = await import("pptxgenjs");
+      let pptxConstructor: any = pptxModule.default || pptxModule;
 
       if (!pptxConstructor) {
         throw new Error("PowerPoint library failed to load.");
@@ -1179,24 +1193,132 @@ ${note.content || "No text content was provided."}
     };
   }, [userNotes]);
 
-  // Filter notes based on search query and subject filter
+  // Count of notes that have attached files
+  const totalAttachmentsCount = useMemo(() => {
+    return userNotes.filter((n) =>
+      Boolean((n.fileUrl && n.fileUrl.trim()) || (n.fileName && n.fileName.trim()))
+    ).length;
+  }, [userNotes]);
+
+  // Reset all search, filter, and sorting states back to defaults
+  const handleResetFilters = () => {
+    setNotesSearchQuery("");
+    setSelectedSubjectFilter("All Subjects");
+    setFilterAttachmentsOnly(false);
+    setSortBy("newest");
+  };
+
+  const isFilterActive = Boolean(
+    notesSearchQuery.trim() ||
+    selectedSubjectFilter !== "All Subjects" ||
+    filterAttachmentsOnly ||
+    sortBy !== "newest"
+  );
+
+  // Filter and sort notes based on search query, subject, attachment toggle, and sorting preference
   const filteredNotes = useMemo(() => {
-    return userNotes.filter((note) => {
-      const q = notesSearchQuery.toLowerCase();
+    const q = notesSearchQuery.trim().toLowerCase();
+
+    // 1. Filtering
+    const filtered = userNotes.filter((note) => {
+      // Attachment filter
+      if (filterAttachmentsOnly) {
+        const hasAttachment = Boolean(
+          (note.fileUrl && note.fileUrl.trim()) || (note.fileName && note.fileName.trim())
+        );
+        if (!hasAttachment) return false;
+      }
+
+      // Search query filter
       const matchesSearch =
         !q ||
         (note.title && note.title.toLowerCase().includes(q)) ||
         (note.content && note.content.toLowerCase().includes(q)) ||
         (note.subjectName && note.subjectName.toLowerCase().includes(q)) ||
+        (note.subjectCode && note.subjectCode.toLowerCase().includes(q)) ||
+        (note.topicName && note.topicName.toLowerCase().includes(q)) ||
         (note.uploaderName && note.uploaderName.toLowerCase().includes(q)) ||
         (Array.isArray(note.tags) && note.tags.some((t) => t.toLowerCase().includes(q)));
 
+      if (!matchesSearch) return false;
+
+      // Subject filter
       if (selectedSubjectFilter === "All Subjects") {
-        return matchesSearch;
+        return true;
       }
-      return matchesSearch && note.subjectName.toLowerCase() === selectedSubjectFilter.toLowerCase();
+      return (note.subjectName || "").toLowerCase() === selectedSubjectFilter.toLowerCase();
     });
-  }, [userNotes, notesSearchQuery, selectedSubjectFilter]);
+
+    // 2. Sorting
+    return filtered.slice().sort((a, b) => {
+      if (sortBy === "likes") {
+        const likesA = typeof a.likes === "number" && !isNaN(a.likes) ? a.likes : 0;
+        const likesB = typeof b.likes === "number" && !isNaN(b.likes) ? b.likes : 0;
+        if (likesB !== likesA) return likesB - likesA;
+        // Tie-breaker: newest first
+        const timeA = a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0;
+        const timeB = b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0;
+        if (timeB !== timeA) return timeB - timeA;
+        return (a.title || "").localeCompare(b.title || "");
+      }
+
+      if (sortBy === "title") {
+        const titleA = (a.title || "").trim();
+        const titleB = (b.title || "").trim();
+        const cmp = titleA.localeCompare(titleB, undefined, { sensitivity: "base", numeric: true });
+        if (cmp !== 0) return cmp;
+        const timeA = a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0;
+        const timeB = b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0;
+        return timeB - timeA;
+      }
+
+      // Default: "newest"
+      const timeA = a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0;
+      const timeB = b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0;
+      if (timeB !== timeA) return timeB - timeA;
+      return (a.title || "").localeCompare(b.title || "");
+    });
+  }, [userNotes, notesSearchQuery, selectedSubjectFilter, filterAttachmentsOnly, sortBy]);
+
+  // Curated collections for the cinematic streaming rows
+  const featuredNotes = useMemo(() => {
+    return userNotes
+      .slice()
+      .sort((a, b) => {
+        const likesA = typeof a.likes === "number" && !isNaN(a.likes) ? a.likes : 0;
+        const likesB = typeof b.likes === "number" && !isNaN(b.likes) ? b.likes : 0;
+        if (likesB !== likesA) return likesB - likesA;
+        const timeA = a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0;
+        const timeB = b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0;
+        if (timeB !== timeA) return timeB - timeA;
+        return (a.title || "").localeCompare(b.title || "");
+      })
+      .slice(0, 10);
+  }, [userNotes]);
+
+  const recentNotes = useMemo(() => {
+    return userNotes
+      .slice()
+      .sort((a, b) => {
+        const timeA = a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0;
+        const timeB = b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0;
+        if (timeB !== timeA) return timeB - timeA;
+        return (a.title || "").localeCompare(b.title || "");
+      })
+      .slice(0, 10);
+  }, [userNotes]);
+
+  const notesWithAttachments = useMemo(() => {
+    return userNotes.filter((n) =>
+      Boolean((n.fileUrl && n.fileUrl.trim()) || (n.fileName && n.fileName.trim()))
+    );
+  }, [userNotes]);
+
+  const spotlightNote = useMemo(() => {
+    if (featuredNotes.length > 0) return featuredNotes[0];
+    if (userNotes.length > 0) return userNotes[0];
+    return null;
+  }, [featuredNotes, userNotes]);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col antialiased transition-colors">
@@ -1228,7 +1350,6 @@ ${note.content || "No text content was provided."}
         onDownloadPPTX={handleDownloadPPTX}
         isGeneratingPPTX={isGeneratingPPTX}
         notesCount={userNotes.length}
-        currentTime={currentTime}
         theme={theme}
         onToggleTheme={toggleTheme}
         mobileMenuOpen={mobileMenuOpen}
@@ -1261,11 +1382,16 @@ ${note.content || "No text content was provided."}
         <main className="flex-1 min-w-0 p-4 md:p-8 space-y-8">
           {/* TAB 1: NOTES EXPLORER */}
           {activeTab === "explorer" && (
-            <div className="space-y-8">
-              {/* Modern Search Hero */}
-              <ExplorerHero
+            <div className="space-y-10">
+              {/* Cinematic Featured Hero */}
+              <CinematicHero
                 searchQuery={notesSearchQuery}
-                onSearchChange={setNotesSearchQuery}
+                onSearchChange={(q) => {
+                  setNotesSearchQuery(q);
+                  if (q.trim()) {
+                    setExplorerViewMode("grid");
+                  }
+                }}
                 onAskAIWithQuery={() => {
                   if (notesSearchQuery.trim()) {
                     setAiQuestion(notesSearchQuery.trim());
@@ -1280,55 +1406,251 @@ ${note.content || "No text content was provided."}
                   }
                   setShowUploadForm(true);
                 }}
-                onDownloadPPTX={handleDownloadPPTX}
                 onOpenAITutor={() => setActiveTab("ai-tutor")}
-                isGeneratingPPTX={isGeneratingPPTX}
+                onReadNote={setViewingNote}
                 notesCount={userNotes.length}
+                featuredNote={spotlightNote}
               />
 
-              {/* Subject Category Filter Bar */}
-              <SubjectFilterBar
-                subjects={allSubjects}
-                selectedSubject={selectedSubjectFilter}
-                onSelectSubject={setSelectedSubjectFilter}
-                availableSubjectCounts={subjectCounts}
-                totalNotesCount={userNotes.length}
-              notes={userNotes}
-              onEditNote={setEditingNote}
-              onDeleteNote={handleDeleteNote}
-              />
+              {/* View Mode & Filter State Switcher */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-200/80 dark:border-slate-800 pb-4">
+                <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900/80 p-1 rounded-xl border border-slate-200/60 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExplorerViewMode("showcase");
+                      if (isFilterActive) {
+                        handleResetFilters();
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                      explorerViewMode === "showcase" && !isFilterActive
+                        ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-bold"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                    <span>Curated Showcase</span>
+                  </button>
 
-              {/* Responsive Notes Grid */}
-              <NoteGrid
-                notes={filteredNotes}
-                isLoading={isLoadingNotes}
-                searchQuery={notesSearchQuery}
-                selectedSubject={selectedSubjectFilter}
-                onClearFilters={() => {
-                  setNotesSearchQuery("");
-                  setSelectedSubjectFilter("All Subjects");
-                }}
-                onUploadNote={() => {
-                  if (!signedInUser) {
-                    showToast("Please sign in to upload.", "error");
-                    handleOpenAuthModal(false);
-                    return;
-                  }
-                  setShowUploadForm(true);
-                }}
-                onAskAI={() => {
-                  setAiQuestion(notesSearchQuery);
-                  setActiveTab("ai-tutor");
-                }}
-                onLike={handleLikeNote}
-                likedNoteIds={likedNoteIds}
-                pendingLikeIds={pendingLikeIds}
-                onRead={setViewingNote}
-                onDownload={handleDownloadNoteMarkdown}
-                onEdit={setEditingNote}
-                onDelete={handleDeleteNote}
-                isAdmin={Boolean(signedInUser && signedInUser.isAdmin)}
-              />
+                  <button
+                    type="button"
+                    onClick={() => setExplorerViewMode("grid")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                      explorerViewMode === "grid" || isFilterActive
+                        ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-bold"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5 text-emerald-500" />
+                    <span>All Notes Catalog</span>
+                    <span className="font-mono text-[10px] bg-slate-200/60 dark:bg-slate-700 px-1.5 py-0.5 rounded-full">
+                      {userNotes.length}
+                    </span>
+                  </button>
+                </div>
+
+                {isFilterActive && (
+                  <button
+                    type="button"
+                    onClick={handleResetFilters}
+                    className="text-xs font-semibold text-rose-600 dark:text-rose-400 hover:underline"
+                  >
+                    Clear Active Filters
+                  </button>
+                )}
+              </div>
+
+              {/* CURATED SHOWCASE VIEW (Streaming Rows) */}
+              {explorerViewMode === "showcase" && !isFilterActive ? (
+                <div className="space-y-12">
+                  {/* Row 1: Featured & Highly Rated Notes */}
+                  {featuredNotes.length > 0 && (
+                    <NoteCarousel
+                      title="Featured & Highly Rated Notes"
+                      subtitle="Peer-recommended study summaries with highest student commendations"
+                      icon={<Flame className="h-5 w-5 text-amber-500" />}
+                      badge={`${featuredNotes.length} Guides`}
+                      onViewAll={() => {
+                        setSortBy("likes");
+                        setExplorerViewMode("grid");
+                      }}
+                      viewAllLabel="Explore All"
+                    >
+                      {featuredNotes.map((note) => (
+                        <NoteCard
+                          key={note.id}
+                          note={note}
+                          onLike={handleLikeNote}
+                          isLiked={likedNoteIds.has(note.id)}
+                          isLikePending={pendingLikeIds.has(note.id)}
+                          onRead={setViewingNote}
+                          onDownload={handleDownloadNoteMarkdown}
+                          onEdit={setEditingNote}
+                          onDelete={handleDeleteNote}
+                          isAdmin={Boolean(signedInUser && signedInUser.isAdmin)}
+                          inCarousel={true}
+                        />
+                      ))}
+                    </NoteCarousel>
+                  )}
+
+                  {/* Row 2: Explore by Academic Discipline */}
+                  <NoteCarousel
+                    title="Curated Academic Disciplines"
+                    subtitle="Structured syllabi across university departments and core fields"
+                    icon={<Layers className="h-5 w-5 text-indigo-500" />}
+                    badge={`${allSubjects.length} Disciplines`}
+                    onViewAll={() => setExplorerViewMode("grid")}
+                    viewAllLabel="Browse All"
+                  >
+                    {allSubjects.map((s) => (
+                      <SubjectCard
+                        key={s.name}
+                        subject={s}
+                        noteCount={subjectCounts[s.name] || 0}
+                        isSelected={selectedSubjectFilter === s.name}
+                        onSelect={(subj) => {
+                          setSelectedSubjectFilter(subj);
+                          setExplorerViewMode("grid");
+                        }}
+                      />
+                    ))}
+                  </NoteCarousel>
+
+                  {/* Row 3: Fresh Additions */}
+                  {recentNotes.length > 0 && (
+                    <NoteCarousel
+                      title="Fresh Additions"
+                      subtitle="Recently published lecture notes and exam review materials"
+                      icon={<Clock className="h-5 w-5 text-emerald-500" />}
+                      badge={`${recentNotes.length} Recent`}
+                      onViewAll={() => {
+                        setSortBy("newest");
+                        setExplorerViewMode("grid");
+                      }}
+                      viewAllLabel="Explore All"
+                    >
+                      {recentNotes.map((note) => (
+                        <NoteCard
+                          key={note.id}
+                          note={note}
+                          onLike={handleLikeNote}
+                          isLiked={likedNoteIds.has(note.id)}
+                          isLikePending={pendingLikeIds.has(note.id)}
+                          onRead={setViewingNote}
+                          onDownload={handleDownloadNoteMarkdown}
+                          onEdit={setEditingNote}
+                          onDelete={handleDeleteNote}
+                          isAdmin={Boolean(signedInUser && signedInUser.isAdmin)}
+                          inCarousel={true}
+                        />
+                      ))}
+                    </NoteCarousel>
+                  )}
+
+                  {/* Row 4: Verified Study Attachments */}
+                  {notesWithAttachments.length > 0 && (
+                    <NoteCarousel
+                      title="Study Material with Attachments"
+                      subtitle="Notes including downloadable slide decks, PDFs, or source attachments"
+                      icon={<Paperclip className="h-5 w-5 text-teal-500" />}
+                      badge={`${notesWithAttachments.length} Documents`}
+                      onViewAll={() => {
+                        setFilterAttachmentsOnly(true);
+                        setExplorerViewMode("grid");
+                      }}
+                      viewAllLabel="Explore All"
+                    >
+                      {notesWithAttachments.map((note) => (
+                        <NoteCard
+                          key={note.id}
+                          note={note}
+                          onLike={handleLikeNote}
+                          isLiked={likedNoteIds.has(note.id)}
+                          isLikePending={pendingLikeIds.has(note.id)}
+                          onRead={setViewingNote}
+                          onDownload={handleDownloadNoteMarkdown}
+                          onEdit={setEditingNote}
+                          onDelete={handleDeleteNote}
+                          isAdmin={Boolean(signedInUser && signedInUser.isAdmin)}
+                          inCarousel={true}
+                        />
+                      ))}
+                    </NoteCarousel>
+                  )}
+
+                  {/* Bottom Exploration Banner */}
+                  <div className="rounded-2xl p-6 sm:p-8 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border border-slate-800 text-white flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+                    <div className="space-y-1 text-center sm:text-left">
+                      <h4 className="font-serif italic font-bold text-lg text-white">
+                        Browse the Entire Study Archive
+                      </h4>
+                      <p className="text-xs text-slate-400">
+                        Access all {userNotes.length} community notes with multi-attribute filtering and instant search.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setExplorerViewMode("grid")}
+                      className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-2 transition shadow-md shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-400"
+                    >
+                      <span>Open Catalog Grid</span>
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* FULL DISCOVERY & FILTERABLE GRID VIEW */
+                <div className="space-y-8">
+                  {/* Subject Category Filter Bar with Sort and Attachment Filter */}
+                  <SubjectFilterBar
+                    subjects={allSubjects}
+                    selectedSubject={selectedSubjectFilter}
+                    onSelectSubject={setSelectedSubjectFilter}
+                    availableSubjectCounts={subjectCounts}
+                    totalNotesCount={userNotes.length}
+                    sortBy={sortBy}
+                    onSortChange={setSortBy}
+                    filterAttachmentsOnly={filterAttachmentsOnly}
+                    onToggleAttachmentsOnly={() => setFilterAttachmentsOnly((prev) => !prev)}
+                    attachmentCount={totalAttachmentsCount}
+                    isFiltered={isFilterActive}
+                    onResetFilters={handleResetFilters}
+                  />
+
+                  {/* Responsive Notes Grid */}
+                  <NoteGrid
+                    notes={filteredNotes}
+                    totalNotesCount={userNotes.length}
+                    isLoading={isLoadingNotes}
+                    searchQuery={notesSearchQuery}
+                    selectedSubject={selectedSubjectFilter}
+                    filterAttachmentsOnly={filterAttachmentsOnly}
+                    onClearFilters={handleResetFilters}
+                    onUploadNote={() => {
+                      if (!signedInUser) {
+                        showToast("Please sign in to upload.", "error");
+                        handleOpenAuthModal(false);
+                        return;
+                      }
+                      setShowUploadForm(true);
+                    }}
+                    onAskAI={() => {
+                      setAiQuestion(notesSearchQuery);
+                      setActiveTab("ai-tutor");
+                    }}
+                    onLike={handleLikeNote}
+                    likedNoteIds={likedNoteIds}
+                    pendingLikeIds={pendingLikeIds}
+                    onRead={setViewingNote}
+                    onDownload={handleDownloadNoteMarkdown}
+                    onEdit={setEditingNote}
+                    onDelete={handleDeleteNote}
+                    isAdmin={Boolean(signedInUser && signedInUser.isAdmin)}
+                  />
+                </div>
+              )}
             </div>
           )}
 

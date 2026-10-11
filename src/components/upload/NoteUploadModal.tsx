@@ -1,8 +1,9 @@
-﻿import React, { useState, useEffect } from "react";
-import { Plus, X, UserCheck, AlertTriangle, Sparkles, BookOpen } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Plus, X, UserCheck, AlertTriangle, Sparkles } from "lucide-react";
 import { supabase } from "../../supabase";
 import { SignedInUser, UserNote } from "../../types";
 import { FileDropzone } from "./FileDropzone";
+import { UI_LABELS } from "../../constants/labels";
 
 interface NoteUploadModalProps {
   isOpen: boolean;
@@ -48,6 +49,21 @@ export function NoteUploadModal({
     }
   }, [signedInUser, isOpen]);
 
+  // Handle Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen && !isSubmitting) {
+        onClose();
+      }
+    };
+    if (isOpen) {
+      window.addEventListener("keydown", handleKeyDown);
+    }
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, isSubmitting, onClose]);
+
   if (!isOpen) return null;
 
   const handleFileSelected = (file: File) => {
@@ -91,7 +107,7 @@ export function NoteUploadModal({
       sourceType: sourceType.trim() || (attachedFile ? "File Upload" : "Typed Note")
     };
 
-    // Upload attached file to Supabase Storage bucket "Notesopedia"
+    // Upload attached file to storage bucket "Notesopedia"
     if (attachedFile) {
       try {
         const safeFileName = attachedFile.name.replace(/[^\w.\-() ]/g, "_");
@@ -100,7 +116,7 @@ export function NoteUploadModal({
         const { error: uploadError } = await supabase.storage
           .from("Notesopedia")
           .upload(storagePath, attachedFile, {
-            contentType: attachedFile.type || "application/octet-stream",
+            cacheControl: "3600",
             upsert: false
           });
 
@@ -113,15 +129,15 @@ export function NoteUploadModal({
           .getPublicUrl(storagePath);
 
         if (!publicUrlData?.publicUrl) {
-          throw new Error("Supabase did not return a public file URL.");
+          throw new Error("Unable to retrieve file public URL.");
         }
 
         payload.fileUrl = publicUrlData.publicUrl;
         payload.fileName = attachedFile.name;
         payload.fileSize = attachedFile.size;
       } catch (storageErr: any) {
-        console.error("Supabase Storage upload failed:", storageErr);
-        showToast("File upload to Supabase Storage failed. Note was not published.", "error");
+        console.error("Storage upload failed:", storageErr);
+        showToast("File upload failed. Note was not published. Please check your connection and try again.", "error");
         setIsSubmitting(false);
         return;
       }
@@ -152,7 +168,7 @@ export function NoteUploadModal({
       if (res.ok) {
         const createdNote = await res.json();
         onNoteCreated(createdNote);
-        showToast("Success! Your study note is stored permanently in Supabase.", "success");
+        showToast("Success! Your study note has been published to the library.", "success");
 
         // Reset inputs
         setTitle("");
@@ -161,42 +177,25 @@ export function NoteUploadModal({
         setAttachedFile(null);
         onClose();
       } else {
-        let errorMsg = "Failed to publish note.";
-        try {
-          const errData = await res.json();
-          errorMsg = errData.error || errorMsg;
-        } catch (_) {}
-        showToast(`Server error: ${errorMsg}`, "error");
+        const err = await res.json().catch(() => ({}));
+        showToast(err.error || "Failed to publish note to the platform.", "error");
       }
     } catch (err: any) {
-      console.error("Network error uploading note:", err);
-
-      // Offline fallback
-      const offlineNote: UserNote = {
-        id: "offline-" + Date.now(),
-        ...payload,
-        uploadedAt: new Date().toISOString(),
-        likes: 0
-      };
-
-      if (attachedFile) {
-        offlineNote.fileName = attachedFile.name;
-        offlineNote.fileUrl = "javascript:void(0)";
-        offlineNote.fileSize = attachedFile.size;
-      }
-
-      onNoteCreated(offlineNote);
-      showToast("Server unreachable. Note saved locally to your device.", "success");
-      setAttachedFile(null);
-      onClose();
+      console.error("Upload note error:", err);
+      showToast("Network error occurred while publishing note.", "error");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full shadow-2xl p-6 md:p-8 space-y-6 max-h-[90vh] overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 md:p-6 overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+      aria-label={UI_LABELS.actions.uploadNotes}
+    >
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 md:p-8 shadow-2xl space-y-6 my-auto transition-colors">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
           <div className="flex items-center space-x-2.5">
@@ -205,7 +204,7 @@ export function NoteUploadModal({
             </div>
             <div>
               <h3 className="font-serif italic font-bold text-xl text-slate-900 dark:text-white">
-                Publish Study Document
+                {UI_LABELS.actions.uploadNotes}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 Share academic notes, exam blueprints, or lecture summaries
@@ -214,8 +213,10 @@ export function NoteUploadModal({
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            aria-label="Close upload dialog"
+            className="h-8 w-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500"
           >
             <X className="h-5 w-5" />
           </button>
@@ -272,7 +273,7 @@ export function NoteUploadModal({
                 <select
                   value={uploaderRole}
                   onChange={(e) => setUploaderRole(e.target.value)}
-                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
                 >
                   <option value="Student">Student</option>
                   <option value="Representative">Class Rep (CR)</option>
@@ -286,7 +287,7 @@ export function NoteUploadModal({
           {/* Title & Subject */}
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Note Title / Thesis *
+              Note Title *
             </label>
             <input
               type="text"
@@ -336,7 +337,7 @@ export function NoteUploadModal({
                 type="text"
                 value={noteType}
                 onChange={(e) => setNoteType(e.target.value)}
-                placeholder="e.g. Lecture, Revision"
+                placeholder="e.g. Lecture Notes, Revision"
                 className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
@@ -356,13 +357,13 @@ export function NoteUploadModal({
 
             <div>
               <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                Origin / Source
+                Source Type
               </label>
               <input
                 type="text"
                 value={sourceType}
                 onChange={(e) => setSourceType(e.target.value)}
-                placeholder="e.g. University Lecture, Book"
+                placeholder="e.g. Lecture, Textbook, Self Study"
                 className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
@@ -380,7 +381,7 @@ export function NoteUploadModal({
               rows={5}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="Write formulas, summary, key points, or code blocks here... (e.g. # Chapter 1&#10;- Point A&#10;```python&#10;def run(): pass&#10;```)"
+              placeholder="Write formulas, summary, key points, or code blocks here... (e.g. # Key Theorems&#10;- Point A&#10;```python&#10;def run(): pass&#10;```)"
               className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
             />
           </div>
@@ -393,30 +394,30 @@ export function NoteUploadModal({
             onClearFile={handleClearFile}
           />
 
-          {/* Actions */}
+          {/* Actions with aligned 40px buttons */}
           <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition"
+              className="h-10 px-4 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500 rounded-xl"
             >
-              Cancel
+              {UI_LABELS.actions.cancel}
             </button>
 
             <button
               type="submit"
               disabled={isSubmitting || !enableSubmissions}
-              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-semibold text-xs shadow-sm flex items-center space-x-2 transition"
+              className="h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-semibold text-xs shadow-xs flex items-center space-x-2 transition focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500"
             >
               {isSubmitting ? (
                 <>
                   <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Publishing to Supabase...</span>
+                  <span>Publishing note...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="h-4 w-4" />
-                  <span>Publish Note</span>
+                  <span>{UI_LABELS.actions.uploadNotes}</span>
                 </>
               )}
             </button>
@@ -426,4 +427,3 @@ export function NoteUploadModal({
     </div>
   );
 }
-

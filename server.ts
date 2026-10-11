@@ -11,7 +11,7 @@ const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-  console.warn("?? Supabase environment variables are missing. Supabase backend will be unavailable.");
+  console.warn("⚠️ Supabase environment variables are missing. Supabase backend will be unavailable.");
 }
 
 const supabase = supabaseUrl && supabaseKey
@@ -23,7 +23,7 @@ const supabase = supabaseUrl && supabaseKey
 const MIND_AI_SERVICE_URL = (process.env.MIND_AI_SERVICE_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 const MIND_AI_SERVICE_KEY = process.env.MIND_AI_SERVICE_KEY || "";
 
-console.log("ðŸ”‘ [SYSTEM CONFIG] Standalone Server Initialized.");
+console.log("🔑 [SYSTEM CONFIG] Standalone Server Initialized.");
 
 const app = express();
 const PORT = 3000;
@@ -57,8 +57,8 @@ const DEFAULT_UNIVERSAL_NOTES = [
   },
   {
     id: "univ-note-2",
-    title: "The SchrÃ¶dinger Equation & Wave Functions Demystified",
-    content: "The SchrÃ¶dinger Equation represents the cornerstone of modern quantum mechanics, describing how the quantum state of a physical system changes over time.\n\n### Time-Independent SchrÃ¶dinger Equation\n$$\\hat{H}\\psi = E\\psi$$\n- $\\hat{H}$ is the Hamiltonian Operator (representing total energy).\n- $\\psi$ is the Wave Function (describes spatial probability amplitude).\n- $E$ is the total energy eigenvalue.\n\n### Interpretations of the Wave Function\nMax Born proposed that the square of the magnitude of the wave function, $|\\psi(x)|^2$, represents the probability density of finding a particle at a given coordinate $x$ at a specific time.\n\n- **Normalisation**: The probability of finding the particle *somewhere* in the universe must sum to 1.\n$$\\int_{-\\infty}^{\\infty} |\\psi(x)|^2 dx = 1$$",
+    title: "The Schrödinger Equation & Wave Functions Demystified",
+    content: "The Schrödinger Equation represents the cornerstone of modern quantum mechanics, describing how the quantum state of a physical system changes over time.\n\n### Time-Independent Schrödinger Equation\n$$\\hat{H}\\psi = E\\psi$$\n- $\\hat{H}$ is the Hamiltonian Operator (representing total energy).\n- $\\psi$ is the Wave Function (describes spatial probability amplitude).\n- $E$ is the total energy eigenvalue.\n\n### Interpretations of the Wave Function\nMax Born proposed that the square of the magnitude of the wave function, $|\\psi(x)|^2$, represents the probability density of finding a particle at a given coordinate $x$ at a specific time.\n\n- **Normalisation**: The probability of finding the particle *somewhere* in the universe must sum to 1.\n$$\\int_{-\\infty}^{\\infty} |\\psi(x)|^2 dx = 1$$",
     subjectName: "Advanced Quantum Mechanics",
     subjectCode: "PHYS-402",
     topicName: "Quantum Foundations",
@@ -84,7 +84,7 @@ const DEFAULT_UNIVERSAL_NOTES = [
 ];
 
 const DEFAULT_CONFIG = {
-  announcement: "ðŸŽ“ Welcome to the new Notsopedia Universal Hub! Download community notes, access the Live AI Search, and share research notes permanently.",
+  announcement: "🎓 Welcome to the new Notsopedia Universal Hub! Download community notes, access the Live AI Search, and share research notes permanently.",
   announcementActive: true,
   enableSimulator: false,
   enableSubmissions: true
@@ -1189,6 +1189,15 @@ Now answer the user's question.
     sources
   };
 }
+// Health check — always public, used by monitoring and deployment verification
+app.get("/api/health", (_req, res) => {
+  res.json({
+    status: "ok",
+    service: "notsopedia-api",
+    timestamp: new Date().toISOString()
+  });
+});
+
 // 8. SECURE AI DISCOVERY & GATEWAY TO MIND-AI (With Gemini Fallback)
 app.post("/api/ai/ask", async (req, res) => {
   try {
@@ -1362,6 +1371,13 @@ app.post("/api/ai/ask", async (req, res) => {
 
   } catch (error: any) {
     console.error("Standalone AI engine error:", error);
+    // Distinguish a missing-key configuration error from a genuine runtime error.
+    // This gives the site owner a clear diagnostic and the user an understandable message.
+    if (error?.message?.includes("GEMINI_API_KEY is not configured")) {
+      return res.status(503).json({
+        error: "The AI service is currently unavailable. The server is missing its AI provider configuration. Please contact the administrator."
+      });
+    }
     res.status(500).json({ error: "Internal standalone AI engine failed to process request" });
   }
 });
@@ -1386,10 +1402,10 @@ async function startServer() {
 
   if (!process.env.VERCEL) {
     app.listen(PORT, "0.0.0.0", () => {
-      console.log(`ðŸš€ Notsopedia Hub backend server booted successfully on port ${PORT}`);
+      console.log(`🚀 Notsopedia Hub backend server booted successfully on port ${PORT}`);
     });
   } else {
-    console.log("â˜ï¸ Running on Vercel serverless environment. Dynamic port binding skipped.");
+    console.log("⚡ Running on Vercel serverless environment. Dynamic port binding skipped.");
   }
 }
 

@@ -97,6 +97,8 @@ export interface SystemConfig {
 
 export type AIMode = "news-gk" | "notes-expert" | "exam-prep";
 
+export type NoteSortOption = "newest" | "likes" | "title";
+
 export interface AIChatMessage {
   sender: "user" | "ai";
   text: string;

@@ -37,8 +37,10 @@ export function SuggestedPrompts({ mode, onSelectPrompt }: SuggestedPromptsProps
       {currentPrompts.map((p, idx) => (
         <button
           key={idx}
+          type="button"
           onClick={() => onSelectPrompt(p)}
-          className="text-[11px] text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 px-2.5 py-1 rounded-full border border-slate-200/60 dark:border-slate-700/60 transition truncate max-w-xs text-left"
+          aria-label={`Ask AI: ${p}`}
+          className="text-[11px] text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 px-2.5 py-1 rounded-full border border-slate-200/60 dark:border-slate-700/60 transition truncate max-w-xs text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
           title={p}
         >
           {p}

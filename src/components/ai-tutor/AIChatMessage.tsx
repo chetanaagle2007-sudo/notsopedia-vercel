@@ -83,9 +83,11 @@ export function AIChatMessage({ message }: AIChatMessageProps) {
             {/* Quick action: Copy response */}
             <div className="pt-2 flex justify-end">
               <button
+                type="button"
                 onClick={handleCopy}
-                className="flex items-center space-x-1 text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
+                className="flex items-center space-x-1 text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 rounded px-1 py-0.5"
                 title="Copy response"
+                aria-label={copied ? "AI response copied to clipboard" : "Copy AI response to clipboard"}
               >
                 {copied ? (
                   <>
