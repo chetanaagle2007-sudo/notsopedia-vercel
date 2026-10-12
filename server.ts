@@ -1331,9 +1331,15 @@ app.post("/api/ai/ask", async (req, res) => {
 
       if (mindAiRes.ok) {
         const json = await mindAiRes.json();
-        if (json && typeof json.response === "string") {
+        if (json && typeof json.response === "string" && json.ok !== false) {
           mindAiData = json;
           mindAiSuccess = true;
+        } else if (json?.ok === false) {
+          // MIND-AI's internal LLM provider (e.g. Ollama) failed — ok:false means the
+          // response text is a provider-error message, not a usable AI answer. Route to fallback.
+          console.warn(
+            `[MIND-AI GATEWAY] MIND-AI returned ok:false (provider error: ${json.error || "unknown"}). Falling back to Gemini.`
+          );
         } else {
           console.warn("[MIND-AI GATEWAY] MIND-AI returned 200 with invalid response schema. Falling back to Gemini.");
         }
@@ -1366,7 +1372,9 @@ app.post("/api/ai/ask", async (req, res) => {
 
     return res.json({
       text: result.text,
-      sources: result.sources
+      sources: result.sources,
+      model: "gemini-2.5-flash",
+      provider: "gemini"
     });
 
   } catch (error: any) {

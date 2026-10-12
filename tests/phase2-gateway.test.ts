@@ -353,6 +353,77 @@ await test("10. MIND-AI successful response is adapted cleanly for frontend", as
   assert.strictEqual(res.body.mode, "notes-expert");
 });
 
+// 10b. MIND-AI ok:false is treated as a failure — NOT returned as a valid answer
+await test("10b. MIND-AI ok:false (provider error) routes to fallback, not returned as answer", async () => {
+  mindAiStatusCode = 200;
+  mindAiDelayMs = 0;
+  // Simulate FastChatEngine failing to reach Ollama: ok=false, response=error text
+  mindAiResponseBody = {
+    response: "I'm having trouble reaching my intelligence provider (ollama) right now.",
+    mode: "notes-expert",
+    should_speak: false,
+    model: "llama3.2:latest",
+    provider: "ollama",
+    sources: [],
+    memories_used: [],
+    ok: false,
+    error: "ConnectionRefusedError"
+  };
+
+  const res = await postAsk(
+    { question: "What is a stack?", mode: "notes-expert" },
+    { Authorization: "Bearer valid-jwt-token" }
+  );
+
+  // Gateway must NOT return 200 with the provider-error text as the answer.
+  // It should fall back to Gemini (200 with Gemini answer) or, if GEMINI_API_KEY
+  // is absent in test env, 503. Either way: the ok:false body must not be the response.
+  if (res.status === 200) {
+    // Gemini answered — ensure it is NOT the MIND-AI provider-error string
+    assert(
+      !res.body.text?.includes("trouble reaching my intelligence provider"),
+      "ok:false provider-error text must not be returned as a valid AI answer"
+    );
+    // If Gemini fallback kicked in it must identify itself
+    if (res.body.provider) {
+      assert.strictEqual(res.body.provider, "gemini", "Fallback provider must be 'gemini'");
+      assert.strictEqual(res.body.model, "gemini-2.5-flash", "Fallback model must be 'gemini-2.5-flash'");
+    }
+  } else {
+    // 503 = GEMINI_API_KEY not in test env (expected in CI), which is still correct
+    // because the ok:false body was correctly rejected
+    assert(res.status === 503, `Expected 200 (Gemini) or 503 (no key). Got ${res.status}`);
+  }
+  mindAiResponseBody = null;
+});
+
+// 10c. MIND-AI ok:true (or absent) is still returned as success (regression check)
+await test("10c. MIND-AI ok:true response is still returned as a successful answer", async () => {
+  mindAiStatusCode = 200;
+  mindAiDelayMs = 0;
+  mindAiResponseBody = {
+    response: "A stack is a LIFO data structure.",
+    mode: "notes-expert",
+    should_speak: false,
+    model: "gemini-2.5-flash",
+    provider: "gemini",
+    sources: [],
+    memories_used: [],
+    ok: true
+  };
+
+  const res = await postAsk(
+    { question: "What is a stack?", mode: "notes-expert" },
+    { Authorization: "Bearer valid-jwt-token" }
+  );
+
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.text, "A stack is a LIFO data structure.");
+  assert.strictEqual(res.body.provider, "gemini");
+  assert.strictEqual(res.body.model, "gemini-2.5-flash");
+  mindAiResponseBody = null;
+});
+
 // 11. MIND-AI timeout -> Gemini fallback
 await test("11. MIND-AI timeout triggers fallback to Gemini", async () => {
   // Make MIND-AI delay longer than MIND_AI_TIMEOUT_MS (300ms)
@@ -372,6 +443,10 @@ await test("11. MIND-AI timeout triggers fallback to Gemini", async () => {
   // - 503: GEMINI_API_KEY is not configured in the test environment (expected in CI)
   // Key verification: Gateway aborted the MIND-AI request on timeout
   assert(res.status === 200 || res.status === 500 || res.status === 503);
+  if (res.status === 200 && res.body.provider) {
+    assert.strictEqual(res.body.provider, "gemini", "Fallback provider must be 'gemini'");
+    assert.strictEqual(res.body.model, "gemini-2.5-flash", "Fallback model must be 'gemini-2.5-flash'");
+  }
   mindAiDelayMs = 0;
 });
 
@@ -390,6 +465,10 @@ await test("12. MIND-AI HTTP 500 error triggers fallback to Gemini", async () =>
   // - 500: Gemini failed with a generic internal error
   // - 503: GEMINI_API_KEY is not configured in the test environment (expected in CI)
   assert(res.status === 200 || res.status === 500 || res.status === 503);
+  if (res.status === 200 && res.body.provider) {
+    assert.strictEqual(res.body.provider, "gemini", "Fallback provider must be 'gemini'");
+    assert.strictEqual(res.body.model, "gemini-2.5-flash", "Fallback model must be 'gemini-2.5-flash'");
+  }
   mindAiStatusCode = 200;
 });
 
@@ -438,6 +517,36 @@ await test("15. All tutor modes are preserved and mapped cleanly into context.mo
     assert(lastMindAiPayload !== null);
     assert.strictEqual(lastMindAiPayload.context.mode, m);
   }
+});
+
+// 16. Gemini fallback response carries model and provider metadata (Fix 2 contract)
+await test("16. Gemini fallback response includes model='gemini-2.5-flash' and provider='gemini'", async () => {
+  // Force MIND-AI to return a non-200 so we definitely hit the Gemini fallback path
+  mindAiStatusCode = 500;
+  mindAiDelayMs = 0;
+
+  const res = await postAsk(
+    { question: "What is the difference between a stack and a queue?", mode: "exam-prep" },
+    { Authorization: "Bearer valid-jwt-token" }
+  );
+
+  // 200 → Gemini answered; 503 → key absent (still valid: field contract test is about the schema)
+  // 500 → Gemini itself errored (key absent but no 503 wrapping — skip field check)
+  if (res.status === 200) {
+    assert.strictEqual(res.body.provider, "gemini",
+      "Gemini fallback response must include provider='gemini'");
+    assert.strictEqual(res.body.model, "gemini-2.5-flash",
+      "Gemini fallback response must include model='gemini-2.5-flash'");
+    // Sanity: text must not be the MIND-AI schema-check warning
+    assert(typeof res.body.text === "string" && res.body.text.length > 0,
+      "Gemini fallback response must include non-empty text");
+  } else {
+    // 503 / 500 without GEMINI_API_KEY in test env: acceptable in CI.
+    // The code path with model/provider fields is still committed and type-checked.
+    assert(res.status === 503 || res.status === 500,
+      `Expected 200 (Gemini) or 503/500 (no key). Got ${res.status}`);
+  }
+  mindAiStatusCode = 200;
 });
 
 // Cleanup servers
