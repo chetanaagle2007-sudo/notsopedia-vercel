@@ -130,6 +130,14 @@ export function MarkdownRenderer({ content, className = "", fontSize = "normal" 
       continue;
     }
 
+    // Horizontal rule (--- or *** or ___ with optional spaces)
+    if (/^(\s*[-*_]){3,}\s*$/.test(line)) {
+      elements.push(
+        <hr key={i} className="my-3 border-t border-slate-200 dark:border-slate-700" />
+      );
+      continue;
+    }
+
     // Bullet item
     if (line.trim().startsWith("- ") || line.trim().startsWith("* ")) {
       const indent = line.search(/\S/);

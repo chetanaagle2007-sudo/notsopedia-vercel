@@ -1017,38 +1017,66 @@ function findRelevantNotes(question: string, allNotes: any[]): any[] {
     "which", "who", "explain", "define", "give", "tell", "about",
     "the", "this", "that", "with", "from", "into", "for", "and",
     "are", "is", "was", "were", "can", "you", "please", "notes",
-    "note", "make", "write", "show", "me"
+    "note", "make", "write", "show", "me", "its", "their", "your",
+    "create", "list", "five", "ten", "two", "three", "four", "six",
+    "brief", "short", "long", "detailed", "simple", "basic"
   ]);
 
-  const questionTerms = question
+  const normalized = question
     .toLowerCase()
-    .replace(/[^a-z0-9+#.\s-]/g, " ")
+    .replace(/[^a-z0-9+#.\s-]/g, " ");
+
+  const tokens = normalized
     .split(/\s+/)
     .filter((word: string) => word.length >= 3 && !stopWords.has(word));
 
+  // Also build bigrams (two-word phrases) for compound term matching.
+  // E.g. "cia triad", "graph traversal", "password security"
+  const allWords = normalized.split(/\s+/).filter((w: string) => w.length >= 2);
+  const bigrams: string[] = [];
+  for (let i = 0; i < allWords.length - 1; i++) {
+    const bigram = `${allWords[i]} ${allWords[i + 1]}`;
+    if (bigram.trim().length > 4) bigrams.push(bigram);
+  }
+
+  if (tokens.length === 0 && bigrams.length === 0) return [];
+
+  // Minimum score required to be included as a reference.
+  // Score of 8 = at least one strong title/subject match, or multiple content matches.
+  // This prevents tangential keyword hits from producing unrelated citations.
+  const MIN_RELEVANCE_SCORE = 8;
+  const MAX_RESULTS = 3;
+
   const scoredNotes = allNotes
     .map((note: any) => {
-      const title = String(note.title || "");
-      const content = String(note.content || "");
-      const subject = String(note.subjectName || note.subject_name || "");
-      const topic = String(note.topicName || note.topic_name || "");
-
-      const searchable = `${title} ${content} ${subject} ${topic}`.toLowerCase();
+      const title = String(note.title || "").toLowerCase();
+      const content = String(note.content || "").toLowerCase();
+      const subject = String(note.subjectName || note.subject_name || "").toLowerCase();
+      const topic = String(note.topicName || note.topic_name || "").toLowerCase();
 
       let score = 0;
 
-      for (const term of questionTerms) {
-        if (title.toLowerCase().includes(term)) score += 8;
-        if (subject.toLowerCase().includes(term)) score += 6;
-        if (topic.toLowerCase().includes(term)) score += 6;
-        if (content.toLowerCase().includes(term)) score += 2;
+      // Bigram matching — high weight for multi-word phrase matches
+      for (const bigram of bigrams) {
+        if (title.includes(bigram)) score += 16;
+        else if (subject.includes(bigram)) score += 12;
+        else if (topic.includes(bigram)) score += 12;
+        else if (content.includes(bigram)) score += 4;
+      }
+
+      // Single-term matching
+      for (const term of tokens) {
+        if (title.includes(term)) score += 8;
+        if (subject.includes(term)) score += 6;
+        if (topic.includes(term)) score += 6;
+        if (content.includes(term)) score += 2;
       }
 
       return { note, score };
     })
-    .filter((item: any) => item.score > 0)
+    .filter((item: any) => item.score >= MIN_RELEVANCE_SCORE)
     .sort((a: any, b: any) => b.score - a.score)
-    .slice(0, 6);
+    .slice(0, MAX_RESULTS);
 
   return scoredNotes.map((item: any) => item.note);
 }
