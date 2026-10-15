@@ -7,24 +7,102 @@ import {
   ExternalLink,
   Calendar,
   User,
-  Tag
+  Tag,
+  Sparkles,
+  RotateCw
 } from "lucide-react";
-import { UserNote } from "../../types";
+import { UserNote, Flashcard } from "../../types";
 import { MarkdownRenderer } from "../common/MarkdownRenderer";
 import { UI_LABELS } from "../../constants/labels";
+import { FlashcardViewerModal } from "../flashcards/FlashcardViewerModal";
+import { supabase } from "../../supabase";
 
 interface NoteReaderModalProps {
   note: UserNote | null;
   onClose: () => void;
   onDownloadMarkdown: (note: UserNote) => void;
+  onOpenAuth?: () => void;
+  showToast?: (message: string, type?: "success" | "error" | "info") => void;
 }
 
 export function NoteReaderModal({
   note,
   onClose,
-  onDownloadMarkdown
+  onDownloadMarkdown,
+  onOpenAuth,
+  showToast
 }: NoteReaderModalProps) {
   const [fontSize, setFontSize] = useState<"normal" | "large" | "xlarge">("normal");
+  const [showFlashcards, setShowFlashcards] = useState<boolean>(false);
+  const [isGeneratingFlashcards, setIsGeneratingFlashcards] = useState<boolean>(false);
+  const [flashcardDeck, setFlashcardDeck] = useState<Flashcard[]>([]);
+  const [flashcardError, setFlashcardError] = useState<string | null>(null);
+  const [deckCache, setDeckCache] = useState<Record<string, Flashcard[]>>({});
+
+  const handleGenerateFlashcards = async () => {
+    if (!note) return;
+    if (isGeneratingFlashcards) return;
+
+    setShowFlashcards(true);
+
+    if (deckCache[note.id] && deckCache[note.id].length > 0) {
+      setFlashcardDeck(deckCache[note.id]);
+      setFlashcardError(null);
+      return;
+    }
+
+    if (!note.content || note.content.trim().length < 40) {
+      setFlashcardError("This note contains insufficient text (minimum 40 characters required) to generate flashcards.");
+      return;
+    }
+
+    setIsGeneratingFlashcards(true);
+    setFlashcardError(null);
+
+    try {
+      const {
+        data: { session },
+        error: sessionError
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        setFlashcardError("You must be signed in to generate AI study flashcards. Please sign in to continue.");
+        if (showToast) {
+          showToast("Please sign in to generate AI flashcards.", "info");
+        }
+        if (onOpenAuth) {
+          onOpenAuth();
+        }
+        return;
+      }
+
+      const res = await fetch(`/api/notes/${encodeURIComponent(note.id)}/flashcards`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to generate study flashcards.");
+      }
+
+      const cards: Flashcard[] = Array.isArray(data.flashcards) ? data.flashcards : [];
+      if (cards.length === 0) {
+        throw new Error("No flashcards could be generated from this note.");
+      }
+
+      setFlashcardDeck(cards);
+      setDeckCache((prev) => ({ ...prev, [note.id]: cards }));
+    } catch (err: any) {
+      setFlashcardError(err.message || "Failed to generate study flashcards. Please try again.");
+    } finally {
+      setIsGeneratingFlashcards(false);
+    }
+  };
+
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -121,6 +199,29 @@ export function NoteReaderModal({
                 A++
               </button>
             </div>
+
+            {/* Generate Flashcards button */}
+            <button
+              type="button"
+              onClick={handleGenerateFlashcards}
+              disabled={isGeneratingFlashcards}
+              className="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold flex items-center space-x-1.5 transition shadow-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500"
+              title={UI_LABELS.actions.generateFlashcards}
+              aria-label={UI_LABELS.actions.generateFlashcards}
+            >
+              {isGeneratingFlashcards ? (
+                <>
+                  <RotateCw className="h-3.5 w-3.5 animate-spin" />
+                  <span className="hidden sm:inline">Generating...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-3.5 w-3.5 text-emerald-200" />
+                  <span className="hidden sm:inline">Flashcards</span>
+                  <span className="sm:hidden">Cards</span>
+                </>
+              )}
+            </button>
 
             {/* Markdown download button */}
             <button
@@ -254,6 +355,17 @@ export function NoteReaderModal({
           </button>
         </div>
       </div>
+
+      {/* Interactive Flashcard Study Modal */}
+      <FlashcardViewerModal
+        isOpen={showFlashcards}
+        onClose={() => setShowFlashcards(false)}
+        noteTitle={note.title}
+        flashcards={flashcardDeck}
+        isLoading={isGeneratingFlashcards}
+        error={flashcardError}
+        onRetry={handleGenerateFlashcards}
+      />
     </div>
   );
 }

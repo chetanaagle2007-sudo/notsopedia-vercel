@@ -1749,6 +1749,8 @@ ${note.content || "No text content was provided."}
         note={viewingNote}
         onClose={() => setViewingNote(null)}
         onDownloadMarkdown={handleDownloadNoteMarkdown}
+        onOpenAuth={() => setShowAuthModal(true)}
+        showToast={showToast}
       />
 
       {/* MODAL 3: Admin Note Moderation */}
