@@ -242,13 +242,43 @@ export function AuthModal({
         await loadProfileAndSignIn(data.user);
       }
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : isForgotPassword
-            ? "Unable to send the password reset email. Please try again."
-            : "Authentication failed. Please check your credentials and try again."
-      );
+      const errStr = error instanceof Error ? error.message : String(error);
+      if (errStr.toLowerCase().includes("email not confirmed")) {
+        setErrorMessage("Your email address has not been confirmed yet. Please check your inbox or click 'Resend confirmation' below.");
+      } else {
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : isForgotPassword
+              ? "Unable to send the password reset email. Please try again."
+              : "Authentication failed. Please check your credentials and try again."
+        );
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResendConfirmation = async () => {
+    clearMessages();
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+      setErrorMessage("Please enter your email address to receive the confirmation email.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: normalizedEmail,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`
+        }
+      });
+      if (error) throw error;
+      setSuccessMessage("Verification email dispatched! Please check your inbox.");
+    } catch (err: any) {
+      setErrorMessage(err?.message || "Could not resend confirmation email.");
     } finally {
       setIsSubmitting(false);
     }
@@ -341,8 +371,18 @@ export function AuthModal({
 
         {/* Feedback Alerts */}
         {errorMessage && (
-          <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs text-rose-800 dark:text-rose-300">
-            {errorMessage}
+          <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs text-rose-800 dark:text-rose-300 space-y-1.5">
+            <p>{errorMessage}</p>
+            {errorMessage.toLowerCase().includes("confirm") && email && (
+              <button
+                type="button"
+                onClick={handleResendConfirmation}
+                disabled={isSubmitting}
+                className="font-bold underline text-rose-900 dark:text-rose-200 hover:text-rose-700 transition"
+              >
+                Resend confirmation email now
+              </button>
+            )}
           </div>
         )}
 

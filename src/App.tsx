@@ -16,11 +16,14 @@ import { SubjectCard } from "./components/explorer/SubjectCard";
 import { NoteCard } from "./components/explorer/NoteCard";
 import { SubjectFilterBar } from "./components/explorer/SubjectFilterBar";
 import { NoteGrid } from "./components/explorer/NoteGrid";
-import { Flame, Clock, Paperclip, Sparkles, LayoutGrid, Layers, ArrowRight } from "lucide-react";
+import { Flame, Clock, Paperclip, Sparkles, LayoutGrid, Layers, ArrowRight, Bookmark } from "lucide-react";
 
 // Upload & Reader Components
 import { NoteUploadModal } from "./components/upload/NoteUploadModal";
 import { NoteReaderModal } from "./components/reader/NoteReaderModal";
+
+// Settings Component
+import { SettingsModal } from "./components/common/SettingsModal";
 
 // AI Tutor Components
 import { AITutorWorkspace } from "./components/ai-tutor/AITutorWorkspace";
@@ -45,8 +48,10 @@ function NotsopediaApp() {
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>("All Subjects");
   const [sortBy, setSortBy] = useState<NoteSortOption>("newest");
   const [filterAttachmentsOnly, setFilterAttachmentsOnly] = useState<boolean>(false);
+  const [filterSavedOnly, setFilterSavedOnly] = useState<boolean>(false);
   const [explorerViewMode, setExplorerViewMode] = useState<"showcase" | "grid">("showcase");
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
 
   // Theme State
   const [theme, setTheme] = useState<"light" | "dark">(() => {
@@ -1205,10 +1210,12 @@ ${note.content || "No text content was provided."}
     setNotesSearchQuery("");
     setSelectedSubjectFilter("All Subjects");
     setFilterAttachmentsOnly(false);
+    setFilterSavedOnly(false);
     setSortBy("newest");
   };
 
   const isFilterActive = Boolean(
+    filterSavedOnly ||
     notesSearchQuery.trim() ||
     selectedSubjectFilter !== "All Subjects" ||
     filterAttachmentsOnly ||
@@ -1221,6 +1228,11 @@ ${note.content || "No text content was provided."}
 
     // 1. Filtering
     const filtered = userNotes.filter((note) => {
+      // Saved / Liked filter
+      if (filterSavedOnly && !likedNoteIds.has(note.id)) {
+        return false;
+      }
+
       // Attachment filter
       if (filterAttachmentsOnly) {
         const hasAttachment = Boolean(
@@ -1354,6 +1366,7 @@ ${note.content || "No text content was provided."}
         onToggleTheme={toggleTheme}
         mobileMenuOpen={mobileMenuOpen}
         onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)}
+        onOpenSettings={() => setShowSettingsModal(true)}
       />
 
       {/* AppShell Two-Column Layout */}
@@ -1376,6 +1389,12 @@ ${note.content || "No text content was provided."}
           isOpenMobile={mobileMenuOpen}
           onCloseMobile={() => setMobileMenuOpen(false)}
           totalNotesCount={userNotes.length}
+          savedNotesCount={likedNoteIds.size}
+          showingSavedOnly={filterSavedOnly}
+          onToggleSavedOnly={() => {
+            setActiveTab("explorer");
+            setFilterSavedOnly((prev) => !prev);
+          }}
         />
 
         {/* Main Content Area */}
@@ -1435,9 +1454,12 @@ ${note.content || "No text content was provided."}
 
                   <button
                     type="button"
-                    onClick={() => setExplorerViewMode("grid")}
+                    onClick={() => {
+                      setFilterSavedOnly(false);
+                      setExplorerViewMode("grid");
+                    }}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                      explorerViewMode === "grid" || isFilterActive
+                      (explorerViewMode === "grid" || isFilterActive) && !filterSavedOnly
                         ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-bold"
                         : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                     }`}
@@ -1446,6 +1468,25 @@ ${note.content || "No text content was provided."}
                     <span>All Notes Catalog</span>
                     <span className="font-mono text-[10px] bg-slate-200/60 dark:bg-slate-700 px-1.5 py-0.5 rounded-full">
                       {userNotes.length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterSavedOnly(true);
+                      setExplorerViewMode("grid");
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                      filterSavedOnly
+                        ? "bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-300 shadow-xs font-bold"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    <Bookmark className="h-3.5 w-3.5 text-rose-500" />
+                    <span>My Library</span>
+                    <span className="font-mono text-[10px] bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 px-1.5 py-0.5 rounded-full">
+                      {likedNoteIds.size}
                     </span>
                   </button>
                 </div>
@@ -1724,6 +1765,19 @@ ${note.content || "No text content was provided."}
         onClose={() => setShowAuthModal(false)}
         onSignIn={handleSignIn}
         initialIsAdmin={authModalIsAdmin}
+      />
+
+      {/* MODAL 5: Application Settings */}
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        signedInUser={signedInUser}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onOpenAuthModal={() => {
+          setShowSettingsModal(false);
+          setShowAuthModal(true);
+        }}
       />
     </div>
   );

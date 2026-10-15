@@ -138,8 +138,59 @@ export function MarkdownRenderer({ content, className = "", fontSize = "normal" 
       continue;
     }
 
-    // Bullet item
-    if (line.trim().startsWith("- ") || line.trim().startsWith("* ")) {
+    // Table detection: line starting and ending with | and followed by a divider |---|
+    if (line.trim().startsWith("|") && line.trim().endsWith("|") && i + 1 < lines.length) {
+      const nextLine = lines[i + 1].trim();
+      const isDivider = /^\|(\s*:?-+:?\s*\|)+$/.test(nextLine);
+      if (isDivider) {
+        const headerRow = line.trim().slice(1, -1).split("|").map((c) => c.trim());
+        const bodyRows: string[][] = [];
+        let j = i + 2;
+        while (j < lines.length && lines[j].trim().startsWith("|") && lines[j].trim().endsWith("|")) {
+          const rowCells = lines[j].trim().slice(1, -1).split("|").map((c) => c.trim());
+          bodyRows.push(rowCells);
+          j++;
+        }
+        elements.push(
+          <div key={`table-${i}`} className="my-3 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold border-b border-slate-200 dark:border-slate-700">
+                  {headerRow.map((cell, cIdx) => (
+                    <th key={cIdx} className="px-3.5 py-2">
+                      {formatInline(cell)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {bodyRows.map((row, rIdx) => (
+                  <tr
+                    key={rIdx}
+                    className={
+                      rIdx % 2 === 0
+                        ? "bg-white dark:bg-slate-900"
+                        : "bg-slate-50/60 dark:bg-slate-800/40"
+                    }
+                  >
+                    {row.map((cell, cIdx) => (
+                      <td key={cIdx} className="px-3.5 py-2 text-slate-700 dark:text-slate-300">
+                        {formatInline(cell)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+        i = j - 1;
+        continue;
+      }
+    }
+
+    // Bullet item (- , * , + )
+    if (line.trim().startsWith("- ") || line.trim().startsWith("* ") || line.trim().startsWith("+ ")) {
       const indent = line.search(/\S/);
       elements.push(
         <div key={i} className="flex items-start my-1 text-slate-700 dark:text-slate-300" style={{ paddingLeft: `${indent * 4}px` }}>
@@ -202,12 +253,30 @@ export function MarkdownRenderer({ content, className = "", fontSize = "normal" 
   return <div className={`space-y-1 ${sizeClasses} ${className}`}>{elements}</div>;
 }
 
-// Inline formatting: **bold**, `code`, $math$, *italic*
+// Inline formatting: **bold**, `code`, $math$, *italic*, [link](url)
 function formatInline(text: string): React.ReactNode {
-  // Regex to split on bold, inline code, and math tokens
-  const parts = text.split(/(\*\*.*?\*\*|`.*?`|\$.*?\$|\*.*?\*)/g);
+  // Regex to split on markdown links, bold, inline code, and math tokens
+  const parts = text.split(/(\[.*?\]\(.*?\)|\*\*.*?\*\*|`.*?`|\$.*?\$|\*.*?\*)/g);
 
   return parts.map((part, index) => {
+    // Markdown link: [label](url)
+    const linkMatch = part.match(/^\[(.*?)\]\((.*?)\)$/);
+    if (linkMatch) {
+      const linkLabel = linkMatch[1];
+      const linkUrl = linkMatch[2];
+      const isExternal = linkUrl.startsWith("http://") || linkUrl.startsWith("https://");
+      return (
+        <a
+          key={index}
+          href={linkUrl}
+          target={isExternal ? "_blank" : undefined}
+          rel={isExternal ? "noopener noreferrer" : undefined}
+          className="text-emerald-600 dark:text-emerald-400 font-semibold underline underline-offset-2 hover:text-emerald-700 dark:hover:text-emerald-300 transition"
+        >
+          {linkLabel}
+        </a>
+      );
+    }
     if (part.startsWith("**") && part.endsWith("**")) {
       return (
         <strong key={index} className="font-bold text-slate-900 dark:text-white">
@@ -245,3 +314,4 @@ function formatInline(text: string): React.ReactNode {
     return part;
   });
 }
+

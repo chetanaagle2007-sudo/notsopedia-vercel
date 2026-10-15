@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useState } from "react";
-import { CheckCircle2, LockKeyhole, Loader2, ArrowLeft } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { CheckCircle2, LockKeyhole, Loader2, ArrowLeft, Mail, RefreshCw, AlertCircle } from "lucide-react";
 import { supabase } from "../../supabase";
 
 type AuthFlowPageProps = {
@@ -14,6 +14,21 @@ export function AuthFlowPage({ mode }: AuthFlowPageProps) {
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [passwordUpdated, setPasswordUpdated] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [successNotice, setSuccessNotice] = useState("");
+
+  // Resend recovery/confirmation state
+  const [resendEmail, setResendEmail] = useState("");
+  const [isResending, setIsResending] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Rate-limit countdown timer
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
 
   useEffect(() => {
     let cancelled = false;
@@ -21,23 +36,53 @@ export function AuthFlowPage({ mode }: AuthFlowPageProps) {
     const restoreAuthFlow = async () => {
       try {
         const url = new URL(window.location.href);
-        const code = url.searchParams.get("code");
+        const searchParams = url.searchParams;
+        const hashStr = window.location.hash.replace(/^#/, "");
+        const hashParams = new URLSearchParams(hashStr);
 
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
+        // Check for error parameters in search or hash
+        const errCode = searchParams.get("error_code") || hashParams.get("error_code");
+        const errDesc = searchParams.get("error_description") || hashParams.get("error_description") || searchParams.get("error") || hashParams.get("error");
 
-          if (error) {
-            throw error;
+        if (errDesc || errCode) {
+          const readable = decodeURIComponent(errDesc || "");
+          if (errCode === "otp_expired" || readable.toLowerCase().includes("expired")) {
+            setErrorMessage("This security link has expired. Please request a new verification or password reset link below.");
+          } else {
+            setErrorMessage(readable || "We could not verify this security link.");
           }
         }
 
+        // Support PKCE code exchange
+        const code = searchParams.get("code") || hashParams.get("code");
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error && !errDesc) {
+            console.warn("PKCE code exchange error:", error.message);
+          }
+        }
+
+        // Support implicit flow tokens in URL hash
+        const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token");
+        if (accessToken && refreshToken) {
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+          if (error) {
+            console.warn("Hash session set error:", error.message);
+          }
+        }
+
+        // Check active session
         const {
           data: { session },
-          error
+          error: sessionError
         } = await supabase.auth.getSession();
 
-        if (error) {
-          throw error;
+        if (sessionError && !errorMessage) {
+          console.error("Session fetch error:", sessionError);
         }
 
         if (!cancelled) {
@@ -45,7 +90,6 @@ export function AuthFlowPage({ mode }: AuthFlowPageProps) {
         }
       } catch (error) {
         console.error("Auth flow error:", error);
-
         if (!cancelled) {
           setErrorMessage(
             error instanceof Error
@@ -65,19 +109,12 @@ export function AuthFlowPage({ mode }: AuthFlowPageProps) {
     const {
       data: { subscription }
     } = supabase.auth.onAuthStateChange((event, session) => {
-      if (cancelled) {
-        return;
-      }
+      if (cancelled) return;
 
-      if (event === "PASSWORD_RECOVERY") {
+      if (event === "PASSWORD_RECOVERY" || (event === "SIGNED_IN" && mode === "reset-password")) {
         setHasSession(Boolean(session?.user));
         setIsCheckingSession(false);
         setErrorMessage("");
-      }
-
-      if (event === "SIGNED_IN" && mode === "reset-password") {
-        setHasSession(Boolean(session?.user));
-        setIsCheckingSession(false);
       }
     });
 
@@ -95,6 +132,7 @@ export function AuthFlowPage({ mode }: AuthFlowPageProps) {
   const handlePasswordUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
+    setSuccessNotice("");
 
     if (password.length < 6) {
       setErrorMessage("Password must be at least 6 characters long.");
@@ -113,9 +151,7 @@ export function AuthFlowPage({ mode }: AuthFlowPageProps) {
         password
       });
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       setPassword("");
       setConfirmPassword("");
@@ -131,15 +167,55 @@ export function AuthFlowPage({ mode }: AuthFlowPageProps) {
     }
   };
 
+  const handleResendLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage("");
+    setSuccessNotice("");
+
+    const targetEmail = resendEmail.trim().toLowerCase();
+    if (!targetEmail || !targetEmail.includes("@")) {
+      setErrorMessage("Please enter a valid email address.");
+      return;
+    }
+
+    if (resendCooldown > 0) return;
+
+    setIsResending(true);
+    try {
+      if (mode === "reset-password") {
+        const { error } = await supabase.auth.resetPasswordForEmail(targetEmail, {
+          redirectTo: `${window.location.origin}/auth/reset-password`
+        });
+        if (error) throw error;
+        setSuccessNotice("Password recovery email sent! Check your inbox.");
+      } else {
+        const { error } = await supabase.auth.resend({
+          type: "signup",
+          email: targetEmail,
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback`
+          }
+        });
+        if (error) throw error;
+        setSuccessNotice("Confirmation email sent! Check your inbox.");
+      }
+      setResendCooldown(60);
+    } catch (err: any) {
+      setErrorMessage(err?.message || "Could not resend email. Please try again later.");
+    } finally {
+      setIsResending(false);
+    }
+  };
+
   if (isCheckingSession) {
     return (
       <AuthFlowShell>
-        <Loader2 className="h-10 w-10 animate-spin text-emerald-600" />
+        <Loader2 className="h-10 w-10 animate-spin text-emerald-600 dark:text-emerald-400" />
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">
           Verifying your Notsopedia session...
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Please wait a moment.
+          Please wait a moment while we establish your secure session.
         </p>
       </AuthFlowShell>
     );
@@ -153,25 +229,51 @@ export function AuthFlowPage({ mode }: AuthFlowPageProps) {
         </div>
 
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-          Authentication successful
+          {hasSession ? "Account Verified Successfully" : "Email Confirmation Received"}
         </h1>
 
-        {hasSession ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Your Notsopedia account is verified. You can continue to the
-            application and sign in.
-          </p>
-        ) : (
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Your email confirmation was processed. Continue to Notsopedia and
-            sign in with your account.
-          </p>
-        )}
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          {hasSession
+            ? "Your Notsopedia account is confirmed and verified. You can now access your learning workspace."
+            : "Your email confirmation was received. You can continue to Notsopedia and sign in."}
+        </p>
 
         {errorMessage && (
           <div className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
             {errorMessage}
           </div>
+        )}
+
+        {successNotice && (
+          <div className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
+            {successNotice}
+          </div>
+        )}
+
+        {/* Resend confirmation option if token was expired or failed */}
+        {!hasSession && (
+          <form onSubmit={handleResendLink} className="w-full pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
+            <span className="block text-xs text-slate-500 dark:text-slate-400">
+              Need another verification email?
+            </span>
+            <div className="flex gap-2">
+              <input
+                type="email"
+                value={resendEmail}
+                onChange={(e) => setResendEmail(e.target.value)}
+                placeholder="Enter your email address"
+                className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs outline-none transition focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              />
+              <button
+                type="submit"
+                disabled={isResending || resendCooldown > 0}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 shrink-0 flex items-center gap-1.5"
+              >
+                {isResending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+                <span>{resendCooldown > 0 ? `Wait ${resendCooldown}s` : "Resend"}</span>
+              </button>
+            </div>
+          </form>
         )}
 
         <button
@@ -193,11 +295,11 @@ export function AuthFlowPage({ mode }: AuthFlowPageProps) {
         </div>
 
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-          Password updated
+          Password Updated
         </h1>
 
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Your Notsopedia password has been changed successfully.
+          Your Notsopedia password has been changed successfully. You can now sign in with your new password.
         </p>
 
         <button
@@ -222,51 +324,78 @@ export function AuthFlowPage({ mode }: AuthFlowPageProps) {
       </h1>
 
       <p className="text-sm text-slate-500 dark:text-slate-400">
-        Choose a new password for your Notsopedia account.
+        Choose a secure new password for your Notsopedia student account.
       </p>
 
-      {!hasSession && (
-        <div className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-          This password-reset session is no longer valid. Please request a new
-          password-reset email.
-        </div>
-      )}
-
       {errorMessage && (
-        <div className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
-          {errorMessage}
+        <div className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300 flex items-start gap-2 text-left">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>{errorMessage}</span>
         </div>
       )}
 
-      <form onSubmit={handlePasswordUpdate} className="w-full space-y-4">
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="New password"
-          autoComplete="new-password"
-          disabled={!hasSession || isUpdatingPassword}
-          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-        />
+      {successNotice && (
+        <div className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300 flex items-start gap-2 text-left">
+          <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>{successNotice}</span>
+        </div>
+      )}
 
-        <input
-          type="password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          placeholder="Confirm new password"
-          autoComplete="new-password"
-          disabled={!hasSession || isUpdatingPassword}
-          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-        />
+      {hasSession ? (
+        <form onSubmit={handlePasswordUpdate} className="w-full space-y-4">
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="New password (min. 6 characters)"
+            autoComplete="new-password"
+            disabled={isUpdatingPassword}
+            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+          />
 
-        <button
-          type="submit"
-          disabled={!hasSession || isUpdatingPassword}
-          className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isUpdatingPassword ? "Updating password..." : "Update Password"}
-        </button>
-      </form>
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Confirm new password"
+            autoComplete="new-password"
+            disabled={isUpdatingPassword}
+            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+          />
+
+          <button
+            type="submit"
+            disabled={isUpdatingPassword}
+            className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 text-sm shadow-xs"
+          >
+            {isUpdatingPassword ? "Updating password..." : "Set New Password"}
+          </button>
+        </form>
+      ) : (
+        <div className="w-full space-y-4">
+          <div className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300 text-left">
+            This password-reset session is expired or not active. Enter your registered email address below to receive a fresh password reset link.
+          </div>
+
+          <form onSubmit={handleResendLink} className="w-full space-y-3">
+            <input
+              type="email"
+              value={resendEmail}
+              onChange={(e) => setResendEmail(e.target.value)}
+              placeholder="Enter your account email"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+            />
+            <button
+              type="submit"
+              disabled={isResending || resendCooldown > 0}
+              className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 text-sm shadow-xs flex items-center justify-center gap-2"
+            >
+              {isResending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+              <span>{resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Send Password Reset Link"}</span>
+            </button>
+          </form>
+        </div>
+      )}
 
       <button
         type="button"
@@ -293,5 +422,3 @@ function AuthFlowShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-
-

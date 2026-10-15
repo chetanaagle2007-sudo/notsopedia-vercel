@@ -8,7 +8,8 @@ import {
   ChevronRight,
   X,
   GraduationCap,
-  BookCheck
+  BookCheck,
+  Bookmark
 } from "lucide-react";
 import { UniversalSubject } from "../../data";
 import { UI_LABELS } from "../../constants/labels";
@@ -23,6 +24,9 @@ interface AppSidebarProps {
   isOpenMobile: boolean;
   onCloseMobile: () => void;
   totalNotesCount: number;
+  savedNotesCount?: number;
+  showingSavedOnly?: boolean;
+  onToggleSavedOnly?: () => void;
 }
 
 export function AppSidebar({
@@ -34,7 +38,10 @@ export function AppSidebar({
   onOpenUploadModal,
   isOpenMobile,
   onCloseMobile,
-  totalNotesCount
+  totalNotesCount,
+  savedNotesCount,
+  showingSavedOnly,
+  onToggleSavedOnly
 }: AppSidebarProps) {
   const handleNavClick = (tab: "explorer" | "ai-tutor" | "admin-portal") => {
     setActiveTab(tab);
@@ -116,6 +123,29 @@ export function AppSidebar({
                 {totalNotesCount}
               </span>
             </button>
+
+            {onToggleSavedOnly && (
+              <button
+                type="button"
+                onClick={() => {
+                  onToggleSavedOnly();
+                  onCloseMobile();
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-rose-500 ${
+                  showingSavedOnly
+                    ? "bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 font-bold border border-rose-200/60 dark:border-rose-800/60"
+                    : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                }`}
+              >
+                <div className="flex items-center space-x-2.5">
+                  <Bookmark className="h-4 w-4 text-rose-500" />
+                  <span>My Saved Library</span>
+                </div>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                  {savedNotesCount ?? 0}
+                </span>
+              </button>
+            )}
 
             <button
               type="button"
