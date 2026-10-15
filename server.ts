@@ -1031,6 +1031,14 @@ function findRelevantNotes(question: string, allNotes: any[]): any[] {
     "question", "questions", "answer", "answers", "help", "need", "some", "good"
   ]);
 
+  const normalizeStem = (w: string): string => {
+    const s = w.toLowerCase().trim();
+    if (s.endsWith("ies") && s.length > 4) return s.slice(0, -3) + "y";
+    if (/(s|x|z|ch|sh)es$/.test(s) && s.length > 4) return s.slice(0, -2);
+    if (s.endsWith("s") && !s.endsWith("ss") && s.length > 3) return s.slice(0, -1);
+    return s;
+  };
+
   const normalized = question
     .toLowerCase()
     .replace(/[^a-z0-9+#.\s-]/g, " ");
@@ -1054,13 +1062,18 @@ function findRelevantNotes(question: string, allNotes: any[]): any[] {
   if (tokens.length === 0 && bigrams.length === 0) return [];
 
   const tokenizeToWordSet = (text: string): Set<string> => {
-    return new Set(
-      text
-        .toLowerCase()
-        .replace(/[^a-z0-9+#.\s-]/g, " ")
-        .split(/\s+/)
-        .filter((w) => w.length >= 2)
-    );
+    const set = new Set<string>();
+    const words = text
+      .toLowerCase()
+      .replace(/[^a-z0-9+#.\s-]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length >= 2);
+    for (const w of words) {
+      set.add(w);
+      const stem = normalizeStem(w);
+      if (stem !== w) set.add(stem);
+    }
+    return set;
   };
 
   const containsPhrase = (haystack: string, phrase: string): boolean => {
@@ -1093,20 +1106,43 @@ function findRelevantNotes(question: string, allNotes: any[]): any[] {
         else if (containsPhrase(content, bigram)) score += 6;
       }
 
-      // Single-term whole-word matching (avoids false substring hits)
+      // Single-term whole-word matching (with stem support; avoids false substring hits)
       for (const term of tokens) {
-        if (titleWords.has(term)) score += 10;
-        if (subjectWords.has(term) || topicWords.has(term)) score += 7;
-        if (contentWords.has(term)) score += 3;
+        const stem = normalizeStem(term);
+        const matchesTitle = titleWords.has(term) || titleWords.has(stem);
+        const matchesSubject = subjectWords.has(term) || subjectWords.has(stem) || topicWords.has(term) || topicWords.has(stem);
+        const matchesContent = contentWords.has(term) || contentWords.has(stem);
+
+        if (matchesTitle) score += 10;
+        if (matchesSubject) score += 7;
+        if (matchesContent) score += 3;
       }
 
       return { note, score };
     })
     .filter((item: any) => item.score >= MIN_RELEVANCE_SCORE)
-    .sort((a: any, b: any) => b.score - a.score)
-    .slice(0, MAX_RESULTS);
+    .sort((a: any, b: any) => b.score - a.score);
 
-  return scoredNotes.map((item: any) => item.note);
+  // Deduplicate notes by id and title to avoid redundant citation slots
+  const seenIds = new Set<string>();
+  const seenTitles = new Set<string>();
+  const dedupedNotes: any[] = [];
+
+  for (const item of scoredNotes) {
+    const id = String(item.note.id || "");
+    const titleNorm = String(item.note.title || "").toLowerCase().trim();
+
+    if (id && seenIds.has(id)) continue;
+    if (titleNorm && seenTitles.has(titleNorm)) continue;
+
+    if (id) seenIds.add(id);
+    if (titleNorm) seenTitles.add(titleNorm);
+
+    dedupedNotes.push(item.note);
+    if (dedupedNotes.length >= MAX_RESULTS) break;
+  }
+
+  return dedupedNotes;
 }
 
 async function generateAiResponseWithGemini(
