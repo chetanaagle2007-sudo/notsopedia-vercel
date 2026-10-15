@@ -1014,12 +1014,21 @@ app.post("/api/notes/reset", async (req, res) => {
 function findRelevantNotes(question: string, allNotes: any[]): any[] {
   const stopWords = new Set([
     "what", "what's", "what is", "why", "how", "when", "where",
-    "which", "who", "explain", "define", "give", "tell", "about",
-    "the", "this", "that", "with", "from", "into", "for", "and",
-    "are", "is", "was", "were", "can", "you", "please", "notes",
-    "note", "make", "write", "show", "me", "its", "their", "your",
-    "create", "list", "five", "ten", "two", "three", "four", "six",
-    "brief", "short", "long", "detailed", "simple", "basic"
+    "which", "who", "whom", "whose", "explain", "explanation", "define", "definition",
+    "give", "tell", "about", "the", "this", "that", "these", "those",
+    "with", "from", "into", "for", "and", "but", "nor", "yet", "both",
+    "are", "is", "was", "were", "been", "being", "have", "has", "had",
+    "can", "could", "will", "would", "shall", "should", "may", "might", "must",
+    "you", "your", "please", "notes", "note", "make", "write", "show", "me",
+    "its", "their", "create", "list", "five", "ten", "two", "three", "four", "six",
+    "brief", "short", "long", "detailed", "simple", "basic",
+    // Generic academic / instructional meta-words that should not trigger unrelated note citations
+    "understanding", "understand", "introduction", "overview", "basics",
+    "concept", "concepts", "difference", "differences", "guide", "summary",
+    "review", "analysis", "principles", "principle", "key", "important",
+    "methods", "method", "system", "systems", "study", "learning", "learn",
+    "example", "examples", "topic", "topics", "subject", "subjects",
+    "question", "questions", "answer", "answers", "help", "need", "some", "good"
   ]);
 
   const normalized = question
@@ -1030,46 +1039,65 @@ function findRelevantNotes(question: string, allNotes: any[]): any[] {
     .split(/\s+/)
     .filter((word: string) => word.length >= 3 && !stopWords.has(word));
 
-  // Also build bigrams (two-word phrases) for compound term matching.
-  // E.g. "cia triad", "graph traversal", "password security"
+  // Build bigrams (two-word phrases) for compound academic term matching (e.g. "graph traversal", "schrodinger equation")
   const allWords = normalized.split(/\s+/).filter((w: string) => w.length >= 2);
   const bigrams: string[] = [];
   for (let i = 0; i < allWords.length - 1; i++) {
-    const bigram = `${allWords[i]} ${allWords[i + 1]}`;
-    if (bigram.trim().length > 4) bigrams.push(bigram);
+    const w1 = allWords[i];
+    const w2 = allWords[i + 1];
+    if (!stopWords.has(w1) || !stopWords.has(w2)) {
+      const bigram = `${w1} ${w2}`;
+      if (bigram.trim().length > 4) bigrams.push(bigram);
+    }
   }
 
   if (tokens.length === 0 && bigrams.length === 0) return [];
 
-  // Minimum score required to be included as a reference.
-  // Score of 8 = at least one strong title/subject match, or multiple content matches.
-  // This prevents tangential keyword hits from producing unrelated citations.
-  const MIN_RELEVANCE_SCORE = 8;
+  const tokenizeToWordSet = (text: string): Set<string> => {
+    return new Set(
+      text
+        .toLowerCase()
+        .replace(/[^a-z0-9+#.\s-]/g, " ")
+        .split(/\s+/)
+        .filter((w) => w.length >= 2)
+    );
+  };
+
+  const containsPhrase = (haystack: string, phrase: string): boolean => {
+    const norm = ` ${haystack.toLowerCase().replace(/[^a-z0-9+#.\s-]/g, " ").replace(/\s+/g, " ")} `;
+    return norm.includes(` ${phrase} `);
+  };
+
+  // Higher relevance score threshold requires genuine domain-concept alignment
+  const MIN_RELEVANCE_SCORE = 12;
   const MAX_RESULTS = 3;
 
   const scoredNotes = allNotes
     .map((note: any) => {
-      const title = String(note.title || "").toLowerCase();
-      const content = String(note.content || "").toLowerCase();
-      const subject = String(note.subjectName || note.subject_name || "").toLowerCase();
-      const topic = String(note.topicName || note.topic_name || "").toLowerCase();
+      const title = String(note.title || "");
+      const content = String(note.content || "");
+      const subject = String(note.subjectName || note.subject_name || "");
+      const topic = String(note.topicName || note.topic_name || "");
+
+      const titleWords = tokenizeToWordSet(title);
+      const subjectWords = tokenizeToWordSet(subject);
+      const topicWords = tokenizeToWordSet(topic);
+      const contentWords = tokenizeToWordSet(content);
 
       let score = 0;
 
-      // Bigram matching — high weight for multi-word phrase matches
+      // Bigram matching — strong signal for compound concepts
       for (const bigram of bigrams) {
-        if (title.includes(bigram)) score += 16;
-        else if (subject.includes(bigram)) score += 12;
-        else if (topic.includes(bigram)) score += 12;
-        else if (content.includes(bigram)) score += 4;
+        if (containsPhrase(title, bigram)) score += 20;
+        else if (containsPhrase(subject, bigram) || containsPhrase(topic, bigram)) score += 14;
+        else if (containsPhrase(content, bigram)) score += 6;
       }
 
-      // Single-term matching
+      // Single-term whole-word matching (avoids false substring hits)
       for (const term of tokens) {
-        if (title.includes(term)) score += 8;
-        if (subject.includes(term)) score += 6;
-        if (topic.includes(term)) score += 6;
-        if (content.includes(term)) score += 2;
+        if (titleWords.has(term)) score += 10;
+        if (subjectWords.has(term) || topicWords.has(term)) score += 7;
+        if (contentWords.has(term)) score += 3;
       }
 
       return { note, score };

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Shield, Lock, FileText, CheckCircle2, Megaphone, Search, Edit3, Trash2, Users, UserCircle, X } from "lucide-react";
 import { SignedInUser, SystemConfig, UserNote } from "../../types";
+import { supabase } from "../../supabase";
 
 interface AdminUser {
   id: string;
@@ -67,9 +68,9 @@ export function AdminPortal({
       setUserLoadError('');
 
       try {
-        const { data: { session }, error: sessionError } = await import("../../supabase").then(
-          ({ supabase }) => supabase.auth.getSession()
-        );
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+
 
         if (sessionError || !session?.access_token) {
           throw new Error("Your administrator session has expired. Please sign in again.");

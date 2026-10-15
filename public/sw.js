@@ -1,6 +1,5 @@
 // Notsopedia PWA Service Worker — v2
-// Bump this version string on every production deployment to ensure
-// already-installed PWAs detect and apply the update.
+// Automatically versioned during production build, with manual fallback
 const CACHE_VERSION = "v2";
 const CACHE_NAME = `notsopedia-${CACHE_VERSION}`;
 
@@ -14,11 +13,8 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
   );
-  // Do NOT call skipWaiting() unconditionally here.
-  // We let the update prompt in main.tsx call skipWaiting() via postMessage
-  // so the user can confirm before the page reloads.
-  // Exception: if this is the very first install (no previous controller),
-  // activate immediately so the PWA works right away.
+  // If first install (no active controller), activate immediately.
+  // Otherwise, wait for user confirmation via postMessage({ type: 'SKIP_WAITING' }).
   if (!self.registration.active) {
     self.skipWaiting();
   }
@@ -29,15 +25,14 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => key !== CACHE_NAME)
+          .filter((key) => key.startsWith("notsopedia-") && key !== CACHE_NAME)
           .map((key) => caches.delete(key))
       )
     ).then(() => self.clients.claim())
   );
 });
 
-// Allow the app to trigger activation of a waiting service worker.
-// main.tsx sends { type: "SKIP_WAITING" } when the user confirms the update.
+// Triggered when user confirms update via the update banner
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
@@ -49,13 +44,63 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(event.request.url);
 
+  // Only handle origin requests
   if (url.origin !== self.location.origin) return;
 
-  // Never cache API/backend requests.
+  // Never cache API/backend requests
   if (url.pathname.startsWith("/api/")) return;
 
-  // Static PWA shell: network first, cached fallback.
+  // 1. Navigation / HTML Document Requests: Network-First with Cache Fallback
+  // Guarantees online users get the newest index.html while offline users get the cached app shell
+  if (event.request.mode === "navigate" || url.pathname === "/" || url.pathname.endsWith(".html")) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+          }
+          return response;
+        })
+        .catch(() => caches.match("/") || caches.match(event.request))
+    );
+    return;
+  }
+
+  // 2. Static Content-Hashed Assets (/assets/*): Cache-First with Network Fallback
+  // Content-hashed files (JS/CSS) are immutable. Cache them for offline capability.
+  if (url.pathname.startsWith("/assets/")) {
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+        return fetch(event.request).then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+          }
+          return networkResponse;
+        });
+      })
+    );
+    return;
+  }
+
+  // 3. Other Local Static Resources (manifest, icons, images): Stale-While-Revalidate
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    caches.match(event.request).then((cachedResponse) => {
+      const fetchPromise = fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+          }
+          return networkResponse;
+        })
+        .catch(() => cachedResponse);
+
+      return cachedResponse || fetchPromise;
+    })
   );
 });

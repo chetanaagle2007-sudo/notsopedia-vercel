@@ -95,6 +95,14 @@ export function MarkdownRenderer({ content, className = "", fontSize = "normal" 
     }
 
     // Headings
+    if (line.startsWith("#### ")) {
+      elements.push(
+        <h4 key={i} className="text-sm font-bold text-slate-800 dark:text-slate-200 mt-3 mb-1.5 tracking-tight">
+          {formatInline(line.slice(5))}
+        </h4>
+      );
+      continue;
+    }
     if (line.startsWith("### ")) {
       elements.push(
         <h3 key={i} className="text-base font-bold text-slate-900 dark:text-white mt-4 mb-2 tracking-tight">
@@ -220,6 +228,63 @@ export function MarkdownRenderer({ content, className = "", fontSize = "normal" 
       elements.push(
         <div key={i} className="my-3 py-2 px-3 bg-slate-100 dark:bg-slate-800/80 rounded-lg text-center font-mono text-xs text-slate-800 dark:text-slate-200 overflow-x-auto border border-slate-200 dark:border-slate-700">
           {line.trim().slice(2, -2)}
+        </div>
+      );
+      continue;
+    }
+
+    // Multiple-Choice Quiz Option (e.g. A) Option, B. Option, (C) Option)
+    const mcqMatch = line.trim().match(/^([A-D])[\).\:]\s+(.*)/i) || line.trim().match(/^\(([A-D])\)\s+(.*)/i);
+    if (mcqMatch) {
+      elements.push(
+        <div
+          key={i}
+          className="my-1.5 flex items-start gap-2.5 p-2 sm:p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 hover:bg-slate-100/60 dark:hover:bg-slate-800/50 transition shadow-2xs"
+        >
+          <span className="h-5 w-5 rounded-lg bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-400 font-bold text-xs flex items-center justify-center shrink-0 font-mono mt-0.5 border border-emerald-300/40 dark:border-emerald-700/40">
+            {mcqMatch[1].toUpperCase()}
+          </span>
+          <span className="text-slate-800 dark:text-slate-200 text-xs sm:text-sm">
+            {formatInline(mcqMatch[2])}
+          </span>
+        </div>
+      );
+      continue;
+    }
+
+    // Correct Answer Highlight Card
+    const answerMatch = line.trim().match(/^(\*\*|)?(Correct Answer|Answer):?(\*\*|)?\s*(.*)/i);
+    if (answerMatch && answerMatch[4].trim()) {
+      elements.push(
+        <div
+          key={i}
+          className="my-3 p-3 rounded-xl border border-emerald-300/80 dark:border-emerald-800/80 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 text-xs sm:text-sm font-medium flex items-start gap-2.5 shadow-2xs"
+        >
+          <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white font-mono text-[10px] font-bold uppercase tracking-wider shrink-0 mt-0.5">
+            Correct Answer
+          </span>
+          <div className="flex-1">
+            {formatInline(answerMatch[4])}
+          </div>
+        </div>
+      );
+      continue;
+    }
+
+    // Explanation Callout Card
+    const expMatch = line.trim().match(/^(\*\*|)?(Explanation):?(\*\*|)?\s*(.*)/i);
+    if (expMatch && expMatch[4].trim()) {
+      elements.push(
+        <div
+          key={i}
+          className="my-3 p-3.5 rounded-xl border border-indigo-200/80 dark:border-indigo-800/80 bg-indigo-50/40 dark:bg-indigo-950/30 text-slate-800 dark:text-slate-200 text-xs sm:text-sm leading-relaxed shadow-2xs"
+        >
+          <div className="font-semibold text-indigo-700 dark:text-indigo-400 text-xs uppercase font-mono tracking-wider mb-1">
+            Explanation
+          </div>
+          <div>
+            {formatInline(expMatch[4])}
+          </div>
         </div>
       );
       continue;
