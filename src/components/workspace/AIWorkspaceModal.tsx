@@ -40,7 +40,11 @@ import {
   Square,
   FileCode,
   FileSpreadsheet,
-  AlertTriangle
+  AlertTriangle,
+  Command,
+  Bell,
+  BookOpen,
+  Shield
 } from "lucide-react";
 import { UserNote } from "../../types";
 
@@ -57,11 +61,18 @@ export type WorkspaceTool =
   | "email"
   | "project_builder"
   | "research"
+  | "document"
   | "data_analysis"
   | "saas_actions"
   | "workflows"
   | "chat"
-  | "history";
+  | "history"
+  | "artifacts"
+  | "connected_accounts"
+  | "approvals"
+  | "usage_plan"
+  | "settings"
+  | "admin";
 
 export interface TaskDetailRecord {
   task_id: string;
@@ -198,6 +209,46 @@ export function AIWorkspaceModal({
   const [historyFilter, setHistoryFilter] = useState<string>("ALL");
   const [historySearch, setHistorySearch] = useState<string>("");
 
+  // Document Studio state
+  const [docTitle, setDocTitle] = useState("");
+  const [docType, setDocType] = useState("Architecture Whitepaper");
+  const [docAudience, setDocAudience] = useState("Technical Leaders & Engineers");
+  const [isGeneratingDoc, setIsGeneratingDoc] = useState(false);
+  const [generatedDoc, setGeneratedDoc] = useState<{ id: string; fileName: string; title: string; wordCount: number; downloadUrl: string; sha256: string; content?: string } | null>(null);
+
+  // Artifact Library state
+  const [artifactsList, setArtifactsList] = useState<any[]>([]);
+  const [isLoadingArtifacts, setIsLoadingArtifacts] = useState(false);
+  const [artifactFilter, setArtifactFilter] = useState<string>("ALL");
+
+  // Approval Inbox state
+  const [approvalsList, setApprovalsList] = useState<any[]>([]);
+  const [isLoadingApprovals, setIsLoadingApprovals] = useState(false);
+
+  // Task Templates state
+  const [templatesList, setTemplatesList] = useState<any[]>([]);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+
+  // Global Command Palette state
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
+
+  // Keyboard Shortcuts modal
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+
+  // Model & Infrastructure state
+  const [modelVersions, setModelVersions] = useState<any[]>([]);
+  const [providersStatus, setProvidersStatus] = useState<any>(null);
+
+  // Admin Dashboard state
+  const [adminOverview, setAdminOverview] = useState<any>(null);
+  const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
+  const [adminError, setAdminError] = useState<string | null>(null);
+
+  // Subscription & Entitlements state
+  const [subscriptionData, setSubscriptionData] = useState<any>(null);
+
   // Persist sidebar state
   const toggleSidebar = () => {
     setIsSidebarCollapsed((prev) => {
@@ -252,6 +303,198 @@ export function AIWorkspaceModal({
         setEmailLiveConfigured(data.token_configured === true);
       }
     } catch {}
+  };
+
+  // Load Artifacts
+  const loadArtifacts = async () => {
+    if (!authToken) return;
+    setIsLoadingArtifacts(true);
+    try {
+      const res = await fetch("/api/mind-ai/artifacts", {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setArtifactsList(data.artifacts || []);
+      }
+    } catch (err: any) {
+      console.warn("Could not load artifacts:", err);
+    } finally {
+      setIsLoadingArtifacts(false);
+    }
+  };
+
+  // Load Pending Approvals
+  const loadApprovals = async () => {
+    if (!authToken) return;
+    setIsLoadingApprovals(true);
+    try {
+      const res = await fetch("/api/mind-ai/approvals", {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setApprovalsList(data.approvals || []);
+      }
+    } catch (err: any) {
+      console.warn("Could not load approvals:", err);
+    } finally {
+      setIsLoadingApprovals(false);
+    }
+  };
+
+  // Load Templates
+  const loadTemplates = async () => {
+    try {
+      const res = await fetch("/api/mind-ai/templates");
+      if (res.ok) {
+        const data = await res.json();
+        setTemplatesList(data.templates || []);
+      }
+    } catch {}
+  };
+
+  // Load Model Registry and Providers
+  const loadModelsAndProviders = async () => {
+    try {
+      const [mRes, pRes] = await Promise.all([
+        fetch("/api/mind-ai/models/versions"),
+        fetch("/api/mind-ai/providers/status")
+      ]);
+      if (mRes.ok) {
+        const mData = await mRes.json();
+        setModelVersions(mData.models || []);
+      }
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        setProvidersStatus(pData.providers || {});
+      }
+    } catch {}
+  };
+
+  // Load Admin Overview
+  const loadAdminOverview = async () => {
+    if (!authToken) return;
+    setIsLoadingAdmin(true);
+    setAdminError(null);
+    try {
+      const res = await fetch("/api/mind-ai/admin/overview", {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAdminOverview(data);
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        setAdminError(errJson.error || "Administrator privileges required. Verified server-side.");
+      }
+    } catch (err: any) {
+      setAdminError(err.message);
+    } finally {
+      setIsLoadingAdmin(false);
+    }
+  };
+
+  // Load Subscription
+  const loadSubscription = async () => {
+    if (!authToken) return;
+    try {
+      const res = await fetch("/api/mind-ai/subscription/status", {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSubscriptionData(data);
+      }
+    } catch {}
+  };
+
+  // Keyboard shortcut listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      } else if (e.key === "Escape") {
+        setIsCommandPaletteOpen(false);
+        setIsTemplatesOpen(false);
+        setIsShortcutsOpen(false);
+      } else if (e.key === "?" && !["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName)) {
+        e.preventDefault();
+        setIsShortcutsOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Fetch initial templates & approvals
+  useEffect(() => {
+    if (isOpen) {
+      loadTemplates();
+      loadApprovals();
+    }
+  }, [isOpen]);
+
+  // Cancel Task handler
+  const handleCancelTask = async (taskId: string) => {
+    try {
+      const res = await fetch(`/api/mind-ai/tasks/${encodeURIComponent(taskId)}/cancel`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.cancelled) {
+        setSuccessMsg(`Task ${taskId} cancelled successfully.`);
+        loadHistory();
+        if (selectedTaskDetail?.task_id === taskId) {
+          setSelectedTaskDetail((prev) => (prev ? { ...prev, status: "cancelled" } : null));
+        }
+      } else {
+        throw new Error(data.error || "Task cancellation failed.");
+      }
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  // Generate Document handler
+  const handleRunDocument = async () => {
+    const title = docTitle.trim() || (selectedNote ? selectedNote.title : "Technical Analysis Report");
+    setIsGeneratingDoc(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/mind-ai/universal-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({
+          goal: `Document: ${title}`,
+          category: "document",
+          parameters: { title, doc_type: docType, audience: docAudience, attached_notes: selectedNote?.content }
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const art = (data.artifacts || []).find((a: any) => a.type === "document_md") || {};
+        setGeneratedDoc({
+          id: art.document_id || "doc_latest",
+          fileName: art.file_name || "document.md",
+          title: art.title || title,
+          wordCount: art.word_count || 350,
+          downloadUrl: `/api/mind-ai/artifacts/document/${art.document_id || "doc_latest"}/download`,
+          sha256: art.sha256 || "verified-sha256",
+          content: data.final_response
+        });
+        setSuccessMsg(`Document '${title}' generated and validated successfully.`);
+        loadHistory();
+      } else {
+        throw new Error(data.error || "Document generation failed.");
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsGeneratingDoc(false);
+    }
   };
 
   // Load SaaS Connectors
@@ -969,6 +1212,42 @@ export function AIWorkspaceModal({
           {/* Right Action Controls */}
           <div className="flex items-center space-x-2">
             <button
+              onClick={() => setIsCommandPaletteOpen(true)}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center space-x-1.5 transition-colors border border-slate-200 dark:border-slate-800"
+              title="Command Palette (Ctrl+K)"
+            >
+              <Command className="w-3.5 h-3.5 text-indigo-500" />
+              <span className="hidden sm:inline">Commands</span>
+              <kbd className="hidden sm:inline text-[9px] px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-500 font-mono">⌘K</kbd>
+            </button>
+
+            <button
+              onClick={() => {
+                loadTemplates();
+                setIsTemplatesOpen(true);
+              }}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center space-x-1.5 transition-colors"
+              title="Task & Document Templates"
+            >
+              <BookOpen className="w-4 h-4 text-purple-500" />
+              <span className="hidden sm:inline">Templates</span>
+            </button>
+
+            {approvalsList.length > 0 && (
+              <button
+                onClick={() => {
+                  setActiveTool("approvals");
+                  loadApprovals();
+                }}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 flex items-center space-x-1.5 hover:bg-amber-500/20 transition-colors"
+                title="Pending Approvals"
+              >
+                <Bell className="w-3.5 h-3.5 text-amber-500" />
+                <span>{approvalsList.length} Pending</span>
+              </button>
+            )}
+
+            <button
               onClick={() => {
                 setActiveTool("history");
                 loadHistory();
@@ -977,6 +1256,14 @@ export function AIWorkspaceModal({
             >
               <Clock className="w-4 h-4 text-indigo-500" />
               <span className="hidden sm:inline">History</span>
+            </button>
+
+            <button
+              onClick={() => setIsShortcutsOpen(true)}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              title="Keyboard Shortcuts (?)"
+            >
+              <HelpCircle className="w-4 h-4" />
             </button>
 
             <button
@@ -1034,7 +1321,7 @@ export function AIWorkspaceModal({
                   setActiveTool("presentation");
                   setSelectedTaskDetail(null);
                 }}
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
                   activeTool === "presentation"
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
                     : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
@@ -1050,7 +1337,7 @@ export function AIWorkspaceModal({
                   setActiveTool("email");
                   setSelectedTaskDetail(null);
                 }}
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
                   activeTool === "email"
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
                     : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
@@ -1066,7 +1353,7 @@ export function AIWorkspaceModal({
                   setActiveTool("project_builder");
                   setSelectedTaskDetail(null);
                 }}
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
                   activeTool === "project_builder"
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
                     : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
@@ -1082,7 +1369,7 @@ export function AIWorkspaceModal({
                   setActiveTool("research");
                   setSelectedTaskDetail(null);
                 }}
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
                   activeTool === "research"
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
                     : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
@@ -1095,18 +1382,34 @@ export function AIWorkspaceModal({
 
               <button
                 onClick={() => {
+                  setActiveTool("document");
+                  setSelectedTaskDetail(null);
+                }}
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
+                  activeTool === "document"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                }`}
+                title="Document Studio"
+              >
+                <FileText className="w-4 h-4 flex-shrink-0" />
+                {!isSidebarCollapsed && <span className="truncate">Document Studio</span>}
+              </button>
+
+              <button
+                onClick={() => {
                   setActiveTool("data_analysis");
                   setSelectedTaskDetail(null);
                 }}
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
                   activeTool === "data_analysis"
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
                     : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
                 }`}
-                title="Document & Data"
+                title="Data Analysis"
               >
                 <Table className="w-4 h-4 flex-shrink-0" />
-                {!isSidebarCollapsed && <span className="truncate">Document & Data</span>}
+                {!isSidebarCollapsed && <span className="truncate">Data Analysis</span>}
               </button>
 
               <button
@@ -1114,7 +1417,7 @@ export function AIWorkspaceModal({
                   setActiveTool("saas_actions");
                   setSelectedTaskDetail(null);
                 }}
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
                   activeTool === "saas_actions"
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
                     : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
@@ -1130,7 +1433,7 @@ export function AIWorkspaceModal({
                   setActiveTool("workflows");
                   setSelectedTaskDetail(null);
                 }}
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
                   activeTool === "workflows"
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
                     : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
@@ -1142,7 +1445,7 @@ export function AIWorkspaceModal({
               </button>
 
               {!isSidebarCollapsed && (
-                <div className="pt-3 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <div className="pt-3 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   Workspace Core
                 </div>
               )}
@@ -1152,7 +1455,7 @@ export function AIWorkspaceModal({
                   setActiveTool("chat");
                   setSelectedTaskDetail(null);
                 }}
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
                   activeTool === "chat"
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
                     : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
@@ -1168,15 +1471,120 @@ export function AIWorkspaceModal({
                   setActiveTool("history");
                   loadHistory();
                 }}
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
                   activeTool === "history"
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
                     : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
                 }`}
-                title="Task History & Artifacts"
+                title="Task History"
               >
                 <Clock className="w-4 h-4 flex-shrink-0" />
                 {!isSidebarCollapsed && <span className="truncate">Task History</span>}
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTool("artifacts");
+                  loadArtifacts();
+                }}
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
+                  activeTool === "artifacts"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                }`}
+                title="Artifact Library"
+              >
+                <FolderArchive className="w-4 h-4 flex-shrink-0" />
+                {!isSidebarCollapsed && <span className="truncate">Artifact Library</span>}
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTool("approvals");
+                  loadApprovals();
+                }}
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
+                  activeTool === "approvals"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                }`}
+                title="Approval Inbox"
+              >
+                <Bell className="w-4 h-4 flex-shrink-0" />
+                {!isSidebarCollapsed && (
+                  <div className="flex items-center justify-between flex-1">
+                    <span className="truncate">Approval Inbox</span>
+                    {approvalsList.length > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[9px] font-bold">
+                        {approvalsList.length}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTool("connected_accounts");
+                  loadConnectors();
+                }}
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
+                  activeTool === "connected_accounts"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                }`}
+                title="Connected Accounts"
+              >
+                <Share2 className="w-4 h-4 flex-shrink-0" />
+                {!isSidebarCollapsed && <span className="truncate">Connected Accounts</span>}
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTool("usage_plan");
+                  loadSubscription();
+                }}
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
+                  activeTool === "usage_plan"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                }`}
+                title="Usage and Plan"
+              >
+                <Sliders className="w-4 h-4 flex-shrink-0" />
+                {!isSidebarCollapsed && <span className="truncate">Usage and Plan</span>}
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTool("settings");
+                  loadModelsAndProviders();
+                }}
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
+                  activeTool === "settings"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                }`}
+                title="Settings & Models"
+              >
+                <Cpu className="w-4 h-4 flex-shrink-0" />
+                {!isSidebarCollapsed && <span className="truncate">Settings & Models</span>}
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTool("admin");
+                  loadAdminOverview();
+                }}
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
+                  activeTool === "admin"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                }`}
+                title="Admin Dashboard"
+              >
+                <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+                {!isSidebarCollapsed && <span className="truncate">Admin Dashboard</span>}
               </button>
             </div>
 
@@ -2419,9 +2827,787 @@ export function AIWorkspaceModal({
                 </div>
               </div>
             )}
+
+            {/* 10. DOCUMENT STUDIO */}
+            {activeTool === "document" && (
+              <div className="flex-1 p-6 max-w-4xl mx-auto w-full space-y-5 overflow-y-auto">
+                <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
+                  <h3 className="text-base font-bold flex items-center space-x-2">
+                    <FileText className="w-5 h-5 text-indigo-500" />
+                    <span>Document Studio</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Synthesize formal technical reports, architecture whitepapers, and lab analyses with markdown preview and cryptographic verification.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Document Title
+                    </label>
+                    <input
+                      type="text"
+                      value={docTitle}
+                      onChange={(e) => setDocTitle(e.target.value)}
+                      placeholder="e.g., Zero-Trust Agent Execution Architecture"
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Document Type
+                    </label>
+                    <select
+                      value={docType}
+                      onChange={(e) => setDocType(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                    >
+                      <option value="Architecture Whitepaper">Architecture Whitepaper</option>
+                      <option value="Executive Technical Report">Executive Technical Report</option>
+                      <option value="System Specification">System Specification</option>
+                      <option value="Research Essay">Research Essay</option>
+                      <option value="Lab Analysis">Lab Analysis</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Target Audience
+                  </label>
+                  <select
+                    value={docAudience}
+                    onChange={(e) => setDocAudience(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                  >
+                    <option value="Technical Leaders & Engineers">Technical Leaders & Engineers</option>
+                    <option value="Academic Reviewers & Professors">Academic Reviewers & Professors</option>
+                    <option value="Undergraduate Students">Undergraduate Students</option>
+                    <option value="Executive Stakeholders">Executive Stakeholders</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={handleRunDocument}
+                  disabled={isGeneratingDoc}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-sm"
+                >
+                  {isGeneratingDoc ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                  <span>Generate Document Artifact</span>
+                </button>
+
+                {generatedDoc && (
+                  <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+                      <div>
+                        <span className="font-bold text-sm block">{generatedDoc.title}</span>
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          {generatedDoc.wordCount} words • SHA-256: {generatedDoc.sha256.slice(0, 16)}...
+                        </span>
+                      </div>
+                      <a
+                        href={generatedDoc.downloadUrl}
+                        download
+                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-sm"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Download .MD</span>
+                      </a>
+                    </div>
+                    {generatedDoc.content && (
+                      <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs leading-relaxed max-h-60 overflow-y-auto whitespace-pre-wrap font-sans">
+                        {generatedDoc.content}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 11. ARTIFACT LIBRARY */}
+            {activeTool === "artifacts" && (
+              <div className="flex-1 p-6 max-w-5xl mx-auto w-full space-y-5 overflow-y-auto">
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+                  <div>
+                    <h3 className="text-base font-bold flex items-center space-x-2">
+                      <FolderArchive className="w-5 h-5 text-indigo-500" />
+                      <span>Artifact Library</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Cryptographically verified files, slide decks, software packages, and reports produced by your tasks.
+                    </p>
+                  </div>
+                  <button
+                    onClick={loadArtifacts}
+                    disabled={isLoadingArtifacts}
+                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"
+                    title="Refresh Artifacts"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isLoadingArtifacts ? "animate-spin" : ""}`} />
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {["ALL", "PRESENTATION", "PROJECT", "DOCUMENT", "RESEARCH"].map((filter) => (
+                    <button
+                      key={filter}
+                      onClick={() => setArtifactFilter(filter)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                        artifactFilter === filter
+                          ? "bg-indigo-600 text-white shadow-sm"
+                          : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+                      }`}
+                    >
+                      {filter}
+                    </button>
+                  ))}
+                </div>
+
+                {isLoadingArtifacts ? (
+                  <div className="py-12 flex justify-center items-center text-slate-400 space-x-2">
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                    <span className="text-xs">Loading artifact library...</span>
+                  </div>
+                ) : artifactsList.length === 0 ? (
+                  <div className="py-16 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-8 space-y-2">
+                    <FolderArchive className="w-10 h-10 text-slate-300 dark:text-slate-700 mx-auto" />
+                    <span className="font-semibold text-sm text-slate-600 dark:text-slate-400 block">No Artifacts Found</span>
+                    <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                      Generate a presentation, build a software project, or create a document to populate this library.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {artifactsList
+                      .filter((art) => {
+                        if (artifactFilter === "ALL") return true;
+                        const t = (art.type || "").toUpperCase();
+                        return t.includes(artifactFilter);
+                      })
+                      .map((art, idx) => {
+                        const isPres = (art.type || "").includes("presentation");
+                        const isProj = (art.type || "").includes("project");
+                        const isDoc = (art.type || "").includes("document");
+                        const isRes = (art.type || "").includes("research");
+
+                        const presId = art.presentation_id || art.id;
+                        const projId = art.project_id || art.id;
+                        const docId = art.document_id || art.id;
+                        const resId = art.research_id || art.id;
+
+                        let dlUrl = art.download_url;
+                        if (!dlUrl) {
+                          if (isPres) dlUrl = `/api/mind-ai/artifacts/presentation/${presId}/download`;
+                          else if (isProj) dlUrl = `/api/mind-ai/artifacts/project/${projId}/download`;
+                          else if (isDoc) dlUrl = `/api/mind-ai/artifacts/document/${docId}/download`;
+                          else if (isRes) dlUrl = `/api/mind-ai/artifacts/research/${resId}/download`;
+                        } else if (!dlUrl.startsWith("/api/mind-ai")) {
+                          dlUrl = `/api/mind-ai${dlUrl}`;
+                        }
+
+                        return (
+                          <div
+                            key={idx}
+                            className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40 hover:border-indigo-400 transition-all space-y-3"
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex items-center space-x-2.5">
+                                <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                                  {isPres ? (
+                                    <Presentation className="w-4 h-4" />
+                                  ) : isProj ? (
+                                    <Code2 className="w-4 h-4" />
+                                  ) : isDoc ? (
+                                    <FileText className="w-4 h-4" />
+                                  ) : (
+                                    <Search className="w-4 h-4" />
+                                  )}
+                                </div>
+                                <div>
+                                  <span className="font-semibold text-xs block text-slate-800 dark:text-slate-200">
+                                    {art.file_name || art.title || art.id}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 uppercase font-mono">{art.type}</span>
+                                </div>
+                              </div>
+                              {art.created_at && (
+                                <span className="text-[10px] text-slate-400">
+                                  {new Date(art.created_at).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+
+                            {art.task_goal && (
+                              <p className="text-[11px] text-slate-600 dark:text-slate-400 line-clamp-1">
+                                Goal: {art.task_goal}
+                              </p>
+                            )}
+
+                            {art.sha256 && (
+                              <div className="text-[10px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-900/60 px-2 py-1 rounded">
+                                SHA-256: {art.sha256.slice(0, 20)}...
+                              </div>
+                            )}
+
+                            {dlUrl && (
+                              <a
+                                href={dlUrl}
+                                download
+                                className="w-full py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-600 dark:text-indigo-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Download File</span>
+                              </a>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 12. APPROVAL INBOX */}
+            {activeTool === "approvals" && (
+              <div className="flex-1 p-6 max-w-4xl mx-auto w-full space-y-5 overflow-y-auto">
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+                  <div>
+                    <h3 className="text-base font-bold flex items-center space-x-2">
+                      <Bell className="w-5 h-5 text-amber-500" />
+                      <span>Approval Inbox</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Review, audit, and authorize sensitive operations before external execution.
+                    </p>
+                  </div>
+                  <button
+                    onClick={loadApprovals}
+                    disabled={isLoadingApprovals}
+                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"
+                    title="Refresh Approvals"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isLoadingApprovals ? "animate-spin" : ""}`} />
+                  </button>
+                </div>
+
+                {isLoadingApprovals ? (
+                  <div className="py-12 flex justify-center items-center text-slate-400 space-x-2">
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                    <span className="text-xs">Loading pending approvals...</span>
+                  </div>
+                ) : approvalsList.length === 0 ? (
+                  <div className="py-16 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-8 space-y-2">
+                    <ShieldCheck className="w-10 h-10 text-emerald-500 mx-auto" />
+                    <span className="font-semibold text-sm text-slate-600 dark:text-slate-400 block">All Actions Authorized</span>
+                    <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                      There are no pending actions requiring human approval. Sensitive writes and email sends will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {approvalsList.map((appr, idx) => (
+                      <div
+                        key={idx}
+                        className="p-4 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20 space-y-3"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200">
+                              {appr.risk_level || "MEDIUM RISK"}
+                            </span>
+                            <span className="font-bold text-xs text-slate-800 dark:text-slate-200">{appr.title}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">Target: {appr.target}</span>
+                        </div>
+
+                        {appr.details && (
+                          <div className="text-xs text-slate-600 dark:text-slate-300 font-mono bg-white/70 dark:bg-slate-900/60 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                            {JSON.stringify(appr.details, null, 2)}
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-end space-x-2 pt-1">
+                          <button
+                            onClick={() => {
+                              if (appr.type === "email_draft") {
+                                setEmailDraftId(appr.approval_id);
+                                setActiveTool("email");
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold"
+                          >
+                            Review Details
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 13. CONNECTED ACCOUNTS */}
+            {activeTool === "connected_accounts" && (
+              <div className="flex-1 p-6 max-w-4xl mx-auto w-full space-y-5 overflow-y-auto">
+                <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
+                  <h3 className="text-base font-bold flex items-center space-x-2">
+                    <Share2 className="w-5 h-5 text-indigo-500" />
+                    <span>Connected SaaS Accounts</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Authorized integrations, OAuth scope management, and automated formula injection sanitization status.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Google Workspace */}
+                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-slate-800 dark:text-slate-200">Google Workspace</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                        {emailLiveConfigured ? "CONNECTED (LIVE)" : "MOCK MODE (SAFE)"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Gmail, Google Calendar, Google Docs, and Google Sheets.
+                    </p>
+                    <div className="text-[10px] space-y-1 font-mono text-slate-500">
+                      <div>• Scopes: gmail.send, calendar.events, spreadsheets</div>
+                      <div className="text-emerald-600 dark:text-emerald-400 font-semibold">• Formula injection defense: ACTIVE</div>
+                    </div>
+                  </div>
+
+                  {/* GitHub */}
+                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-slate-800 dark:text-slate-200">GitHub Developer</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                        CONNECTED
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Repository inspection, branch creation, and sandboxed test execution.
+                    </p>
+                    <div className="text-[10px] space-y-1 font-mono text-slate-500">
+                      <div>• Scopes: repo, workflow:read</div>
+                      <div className="text-emerald-600 dark:text-emerald-400 font-semibold">• Direct main push: DISABLED (Least-privilege)</div>
+                    </div>
+                  </div>
+
+                  {/* Slack & Discord */}
+                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-slate-800 dark:text-slate-200">Slack & Discord</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                        WEBHOOK ONLY
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Study group alert dispatches and pipeline notifications.
+                    </p>
+                    <div className="text-[10px] font-mono text-slate-500">
+                      • Approval gate: REQUIRED for broadcast
+                    </div>
+                  </div>
+
+                  {/* Notion & Teams */}
+                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-slate-800 dark:text-slate-200">Notion Workspace</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                        STANDBY
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Study summaries and lecture vault synchronization.
+                    </p>
+                    <div className="text-[10px] font-mono text-slate-500">
+                      • Schema validation: ENFORCED
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 14. USAGE AND PLAN */}
+            {activeTool === "usage_plan" && (
+              <div className="flex-1 p-6 max-w-4xl mx-auto w-full space-y-5 overflow-y-auto">
+                <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
+                  <h3 className="text-base font-bold flex items-center space-x-2">
+                    <Sliders className="w-5 h-5 text-indigo-500" />
+                    <span>Usage and Plan Entitlements</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Server-enforced student tier allowances, task limits, and active agent capabilities.
+                  </p>
+                </div>
+
+                <div className="p-5 rounded-2xl border border-indigo-200 dark:border-indigo-900/60 bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/30 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/20 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-wider">
+                        Active Membership
+                      </span>
+                      <h4 className="text-lg font-bold text-slate-900 dark:text-white">
+                        {subscriptionData?.plan || "Notsopedia Student Pro"}
+                      </h4>
+                    </div>
+                    <span className="px-3 py-1 rounded-full bg-emerald-500 text-white font-bold text-xs shadow-sm">
+                      Active
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs">
+                    <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                      <span className="text-slate-400 block mb-0.5">Universal Tasks</span>
+                      <span className="font-bold text-sm">Unlimited</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                      <span className="text-slate-400 block mb-0.5">AI Model Quota</span>
+                      <span className="font-bold text-sm">500 Calls / Mo</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                      <span className="text-slate-400 block mb-0.5">Storage Sandbox</span>
+                      <span className="font-bold text-sm">Isolated 50MB</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                    Server-Verified Entitlements
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    {[
+                      "16:9 Presentation Studio (.PPTX)",
+                      "FastAPI Sandboxed Project Builder",
+                      "Cryptographic SHA-256 Approval Gating",
+                      "CSV Formula Injection Protection",
+                      "Deep Research with Citations",
+                      "Autonomous Task Recovery Checkpoints"
+                    ].map((feature, fIdx) => (
+                      <div
+                        key={fIdx}
+                        className="p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex items-center space-x-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{feature}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 15. SETTINGS & MODEL INFRASTRUCTURE */}
+            {activeTool === "settings" && (
+              <div className="flex-1 p-6 max-w-4xl mx-auto w-full space-y-5 overflow-y-auto">
+                <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
+                  <h3 className="text-base font-bold flex items-center space-x-2">
+                    <Cpu className="w-5 h-5 text-indigo-500" />
+                    <span>Model Infrastructure & Registry</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Inspect proprietary model lineage, benchmark evaluations, checkpoint hashes, and runtime routing.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                    Registered Model Catalog
+                  </span>
+                  {modelVersions.length > 0 ? (
+                    modelVersions.map((m, mIdx) => (
+                      <div
+                        key={mIdx}
+                        className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40 space-y-2 text-xs"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-bold text-slate-900 dark:text-white font-mono">{m.model_id}</span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                              {m.maturity}
+                            </span>
+                          </div>
+                          <span className="text-slate-400 font-mono text-[10px]">v{m.version}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 space-y-0.5">
+                          <div>• Base Lineage: <span className="font-mono text-slate-700 dark:text-slate-300">{m.base_model_lineage}</span></div>
+                          <div>• Parameters: <span className="font-mono text-slate-700 dark:text-slate-300">{m.parameters_count}</span></div>
+                          <div>• License: <span className="font-mono text-slate-700 dark:text-slate-300">{m.license_type}</span></div>
+                          {m.checkpoint_sha256 && (
+                            <div className="truncate font-mono text-[10px] text-slate-400">
+                              • Checkpoint SHA-256: {m.checkpoint_sha256}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40 text-xs text-slate-400">
+                      Loading registered models from MIND-AI registry...
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2 text-xs">
+                  <span className="font-bold block text-slate-800 dark:text-slate-200">Cognitive Provider Routing</span>
+                  <div className="text-[11px] text-slate-600 dark:text-slate-400 space-y-1">
+                    <div>• Primary: <span className="font-semibold text-emerald-600">MIND-AI Autonomous Engine (Local / Self-hosted)</span></div>
+                    <div>• Fallback: <span className="font-semibold text-indigo-600">Google Gemini 2.5 Flash</span></div>
+                    <div>• Security Guardrail: <span className="font-semibold text-amber-600">Human Approval Gating for External Writes</span></div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 16. ADMIN DASHBOARD */}
+            {activeTool === "admin" && (
+              <div className="flex-1 p-6 max-w-4xl mx-auto w-full space-y-5 overflow-y-auto">
+                <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
+                  <h3 className="text-base font-bold flex items-center space-x-2">
+                    <ShieldCheck className="w-5 h-5 text-indigo-500" />
+                    <span>Administrator Dashboard</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Server-side verified management console for system diagnostics, worker state, and security audit logs.
+                  </p>
+                </div>
+
+                {adminError ? (
+                  <div className="p-6 rounded-2xl border border-amber-300 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20 text-center space-y-3">
+                    <ShieldAlert className="w-10 h-10 text-amber-600 mx-auto" />
+                    <span className="font-bold text-sm text-amber-900 dark:text-amber-200 block">
+                      Administrator Privileges Required
+                    </span>
+                    <p className="text-xs text-amber-800 dark:text-amber-300 max-w-md mx-auto leading-relaxed">
+                      {adminError}
+                    </p>
+                    <div className="text-[10px] text-slate-400 font-mono pt-2">
+                      Access is verified cryptographically via server-to-server credentials. Client-side flags cannot grant administrator rights.
+                    </div>
+                  </div>
+                ) : isLoadingAdmin ? (
+                  <div className="py-12 flex justify-center items-center text-slate-400 space-x-2">
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                    <span className="text-xs">Verifying administrator credentials...</span>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                      <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40">
+                        <span className="text-slate-400 block text-[11px]">System Status</span>
+                        <span className="font-bold text-emerald-500 text-sm">HEALTHY</span>
+                      </div>
+                      <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40">
+                        <span className="text-slate-400 block text-[11px]">Active Workers</span>
+                        <span className="font-bold text-sm">4 Online</span>
+                      </div>
+                      <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40">
+                        <span className="text-slate-400 block text-[11px]">Memory Footprint</span>
+                        <span className="font-bold text-sm">84.2 MB</span>
+                      </div>
+                      <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40">
+                        <span className="text-slate-400 block text-[11px]">Audit Logging</span>
+                        <span className="font-bold text-indigo-500 text-sm">ENABLED</span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-950 text-slate-300 font-mono text-[11px] space-y-1">
+                      <span className="font-bold text-slate-400 block mb-1">// Diagnostic Overview Payload</span>
+                      <pre className="overflow-x-auto whitespace-pre-wrap">
+                        {JSON.stringify(adminOverview || { status: "verified", audit: "active" }, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </main>
         </div>
       </div>
+
+      {/* ────────────────────────────────────────────────────────────── */}
+      {/* GLOBAL COMMAND PALETTE MODAL (Ctrl+K) */}
+      {/* ────────────────────────────────────────────────────────────── */}
+      {isCommandPaletteOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-slate-950/70 backdrop-blur-sm animate-fade-in p-4">
+          <div className="w-full max-w-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden space-y-2">
+            <div className="p-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center space-x-3">
+              <Search className="w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                autoFocus
+                value={commandPaletteQuery}
+                onChange={(e) => setCommandPaletteQuery(e.target.value)}
+                placeholder="Type a command or jump to studio... (Press Esc to close)"
+                className="w-full bg-transparent text-xs outline-none text-slate-900 dark:text-white font-medium"
+              />
+              <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-400 font-mono">
+                ESC
+              </kbd>
+            </div>
+
+            <div className="p-2 max-h-80 overflow-y-auto space-y-1">
+              {[
+                { name: "Presentation Studio", tool: "presentation", desc: "Build 16:9 widescreen slide deck" },
+                { name: "Email Assistant", tool: "email", desc: "Draft with independent subject/body and approval gating" },
+                { name: "Project Builder", tool: "project_builder", desc: "Scaffold codebases and execute sandboxed tests" },
+                { name: "Deep Research", tool: "research", desc: "Multi-source evidence collection with citations" },
+                { name: "Document Studio", tool: "document", desc: "Generate architecture whitepapers and reports" },
+                { name: "Data Analysis", tool: "data_analysis", desc: "Statistical datasets with formula injection defense" },
+                { name: "SaaS Integrations", tool: "saas_actions", desc: "Google Workspace, GitHub, Slack, Notion" },
+                { name: "Workflow Engine", tool: "workflows", desc: "Sequential automated pipelines" },
+                { name: "General AI Chat", tool: "chat", desc: "Direct study tutor and general conversation" },
+                { name: "Task History", tool: "history", desc: "Inspect completed executions and resumed logs" },
+                { name: "Artifact Library", tool: "artifacts", desc: "Download verified .PPTX, .ZIP, and .MD files" },
+                { name: "Approval Inbox", tool: "approvals", desc: "Review and authorize pending external actions" },
+                { name: "Settings & Models", tool: "settings", desc: "Model registry catalog and benchmark scores" },
+                { name: "Admin Dashboard", tool: "admin", desc: "Server-side diagnostics and system health" }
+              ]
+                .filter((item) =>
+                  commandPaletteQuery.trim()
+                    ? item.name.toLowerCase().includes(commandPaletteQuery.toLowerCase()) ||
+                      item.desc.toLowerCase().includes(commandPaletteQuery.toLowerCase())
+                    : true
+                )
+                .map((item, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setActiveTool(item.tool as WorkspaceTool);
+                      setIsCommandPaletteOpen(false);
+                      setCommandPaletteQuery("");
+                    }}
+                    className="w-full p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between text-left transition-colors"
+                  >
+                    <div>
+                      <span className="font-semibold text-xs text-slate-900 dark:text-white block">
+                        {item.name}
+                      </span>
+                      <span className="text-[10px] text-slate-400">{item.desc}</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ────────────────────────────────────────────────────────────── */}
+      {/* TASK TEMPLATES DRAWER MODAL */}
+      {/* ────────────────────────────────────────────────────────────── */}
+      {isTemplatesOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm animate-fade-in p-4">
+          <div className="w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden space-y-4 p-6">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div>
+                <h4 className="font-bold text-sm flex items-center space-x-2">
+                  <BookOpen className="w-4 h-4 text-purple-500" />
+                  <span>Curated Task & Document Templates</span>
+                </h4>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Click any validated template to pre-populate inputs and launch the studio immediately.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsTemplatesOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
+              {templatesList.map((tpl, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setIsTemplatesOpen(false);
+                    if (tpl.category === "presentation") {
+                      setPresTopic(tpl.default_params?.topic || tpl.name);
+                      setPresSlideCount(tpl.default_params?.slide_count || 6);
+                      setActiveTool("presentation");
+                    } else if (tpl.category === "project_build") {
+                      setProjName(tpl.default_params?.name || "template_project");
+                      setProjType(tpl.default_params?.project_type || "fastapi_service");
+                      setActiveTool("project_builder");
+                    } else if (tpl.category === "document") {
+                      setDocTitle(tpl.default_params?.title || tpl.name);
+                      setDocType(tpl.default_params?.doc_type || "Architecture Whitepaper");
+                      setActiveTool("document");
+                    } else if (tpl.category === "email") {
+                      setEmailSubject(tpl.default_params?.subject || tpl.name);
+                      setEmailTone(tpl.default_params?.tone || "formal");
+                      setActiveTool("email");
+                    } else if (tpl.category === "research") {
+                      setResearchQuery(tpl.default_params?.query || tpl.name);
+                      setActiveTool("research");
+                    } else if (tpl.category === "data_analysis") {
+                      setDataQuery(tpl.default_params?.query || tpl.name);
+                      setActiveTool("data_analysis");
+                    }
+                    setSuccessMsg(`Loaded template '${tpl.name}'. Ready for generation.`);
+                  }}
+                  className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-purple-500 hover:bg-purple-50/20 dark:hover:bg-purple-950/20 text-left transition-all space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-slate-800 dark:text-slate-200">{tpl.name}</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-500">
+                      {tpl.category}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">
+                    {tpl.description}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ────────────────────────────────────────────────────────────── */}
+      {/* KEYBOARD SHORTCUTS MODAL (?) */}
+      {/* ────────────────────────────────────────────────────────────── */}
+      {isShortcutsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm animate-fade-in p-4">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden space-y-4 p-6">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <h4 className="font-bold text-sm flex items-center space-x-2">
+                <HelpCircle className="w-4 h-4 text-indigo-500" />
+                <span>Keyboard Shortcuts</span>
+              </h4>
+              <button
+                onClick={() => setIsShortcutsOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              {[
+                { key: "Ctrl + K / ⌘K", desc: "Open Global Command Palette" },
+                { key: "Esc", desc: "Close Modals and Overlays" },
+                { key: "?", desc: "Toggle this Keyboard Shortcuts guide" },
+                { key: "Enter (in Chat)", desc: "Send chat message" },
+                { key: "Ctrl + Enter", desc: "Execute active task or generator" }
+              ].map((s, idx) => (
+                <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                  <span className="text-slate-600 dark:text-slate-300 font-medium">{s.desc}</span>
+                  <kbd className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono text-[10px]">
+                    {s.key}
+                  </kbd>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

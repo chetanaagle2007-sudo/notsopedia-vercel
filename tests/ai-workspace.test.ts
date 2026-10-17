@@ -247,6 +247,60 @@ const mockMindAiServer = http.createServer((req, res) => {
       }));
     }
 
+    if (req.url?.startsWith("/artifacts") && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        artifacts: [{ id: "art-1", type: "presentation_pptx", file_name: "lecture.pptx" }],
+        count: 1
+      }));
+    }
+
+    if (req.url?.startsWith("/approvals") && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        approvals: [{ approval_id: "appr-1", type: "email_draft", title: "Review email" }],
+        count: 1
+      }));
+    }
+
+    if (req.url === "/templates" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        templates: [{ id: "tpl-pres", category: "presentation", name: "Academic Deck" }],
+        count: 1
+      }));
+    }
+
+    if (req.url === "/models/versions" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        models: [{ model_id: "mind-ai-planner-v1", maturity: "production" }],
+        count: 1
+      }));
+    }
+
+    if (req.url === "/providers/status" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        providers: { mind_ai: { status: "available" } }
+      }));
+    }
+
+    if (req.url === "/subscription/status" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        plan: "student",
+        active: true
+      }));
+    }
+
+    if (req.url === "/tasks/task-to-cancel/cancel" && req.method === "POST") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        task_id: "task-to-cancel",
+        cancelled: true
+      }));
+    }
 
     // Handle presentation endpoints
     if (req.url === "/presentations/outline" && req.method === "POST") {
@@ -593,6 +647,87 @@ await test("15. GET /api/mind-ai/email/status returns configuration transparency
   assert.strictEqual(statusRes.status, 200);
   assert.strictEqual(statusRes.body.status, "disconnected");
   assert.strictEqual(statusRes.body.token_configured, false);
+});
+
+await test("16. POST /api/mind-ai/tasks/:id/cancel cancels task with student authentication", async () => {
+  const cancelRes = await requestApp(
+    "POST",
+    "/api/mind-ai/tasks/task-to-cancel/cancel",
+    undefined,
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(cancelRes.status, 200);
+  assert.strictEqual(cancelRes.body.cancelled, true);
+});
+
+await test("17. GET /api/mind-ai/artifacts returns student artifact library", async () => {
+  const artRes = await requestApp(
+    "GET",
+    "/api/mind-ai/artifacts",
+    undefined,
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(artRes.status, 200);
+  assert.strictEqual(artRes.body.count, 1);
+  assert.strictEqual(artRes.body.artifacts[0].file_name, "lecture.pptx");
+});
+
+await test("18. GET /api/mind-ai/approvals returns pending approval queue", async () => {
+  const appRes = await requestApp(
+    "GET",
+    "/api/mind-ai/approvals",
+    undefined,
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(appRes.status, 200);
+  assert.strictEqual(appRes.body.count, 1);
+  assert.strictEqual(appRes.body.approvals[0].approval_id, "appr-1");
+});
+
+await test("19. GET /api/mind-ai/templates returns curated task templates", async () => {
+  const tplRes = await requestApp(
+    "GET",
+    "/api/mind-ai/templates",
+    undefined,
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(tplRes.status, 200);
+  assert.strictEqual(tplRes.body.count, 1);
+  assert.strictEqual(tplRes.body.templates[0].category, "presentation");
+});
+
+await test("20. GET /api/mind-ai/models/versions returns model catalog and lineage", async () => {
+  const modelRes = await requestApp(
+    "GET",
+    "/api/mind-ai/models/versions",
+    undefined,
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(modelRes.status, 200);
+  assert.strictEqual(modelRes.body.count, 1);
+  assert.strictEqual(modelRes.body.models[0].model_id, "mind-ai-planner-v1");
+});
+
+await test("21. GET /api/mind-ai/providers/status returns provider health metrics", async () => {
+  const provRes = await requestApp(
+    "GET",
+    "/api/mind-ai/providers/status",
+    undefined,
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(provRes.status, 200);
+  assert.strictEqual(provRes.body.providers.mind_ai.status, "available");
+});
+
+await test("22. Non-admin GET /api/mind-ai/admin/overview is rejected with HTTP 403 server-side", async () => {
+  const adminRes = await requestApp(
+    "GET",
+    "/api/mind-ai/admin/overview",
+    undefined,
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(adminRes.status, 403);
+  assert.ok(adminRes.body.error.includes("Administrator privileges required"));
 });
 
 // Teardown test servers

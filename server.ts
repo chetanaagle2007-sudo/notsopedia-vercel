@@ -2277,6 +2277,33 @@ app.get("/api/mind-ai/tasks/:id", async (req, res) => {
   }
 });
 
+// 11b. CANCEL TASK
+app.post("/api/mind-ai/tasks/:id/cancel", async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const mindAiRes = await fetch(`${MIND_AI_SERVICE_URL}/tasks/${encodeURIComponent(taskId)}/cancel`, {
+      method: "POST",
+      headers: {
+        "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY
+      }
+    });
+
+    if (mindAiRes.status === 401 || mindAiRes.status === 403) {
+      return res.status(502).json({ error: "MIND-AI service authentication failed." });
+    }
+
+    const data = await mindAiRes.json().catch(() => ({}));
+    return res.status(mindAiRes.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: `Cancellation failed: ${err.message}` });
+  }
+});
+
 // 12. PROXY DOWNLOAD ARTIFACTS
 app.get("/api/mind-ai/artifacts/:type/:id/download", async (req, res) => {
   try {
@@ -2298,6 +2325,12 @@ app.get("/api/mind-ai/artifacts/:type/:id/download", async (req, res) => {
       upstreamPath = `/presentations/${encodeURIComponent(id)}/download`;
     } else if (type === "project") {
       upstreamPath = `/projects/${encodeURIComponent(id)}/download`;
+    } else if (type === "document") {
+      upstreamPath = `/documents/${encodeURIComponent(id)}/download`;
+    } else if (type === "research") {
+      upstreamPath = `/research/${encodeURIComponent(id)}/download`;
+    } else if (type === "data-analysis") {
+      upstreamPath = `/data-analysis/${encodeURIComponent(id)}/download`;
     } else {
       return res.status(400).json({ error: "Invalid artifact type." });
     }
@@ -2325,6 +2358,168 @@ app.get("/api/mind-ai/artifacts/:type/:id/download", async (req, res) => {
   } catch (err: any) {
     console.error("Artifact download error:", err);
     return res.status(500).json({ error: "Failed to download artifact." });
+  }
+});
+
+// 12b. LIST ALL ARTIFACTS FOR STUDENT
+app.get("/api/mind-ai/artifacts", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const mindAiRes = await fetch(`${MIND_AI_SERVICE_URL}/artifacts?owner_id=${encodeURIComponent(user.id)}`, {
+      headers: {
+        "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY
+      }
+    });
+
+    if (!mindAiRes.ok) {
+      return res.status(mindAiRes.status).json({ error: "Failed to fetch artifacts." });
+    }
+    const data = await mindAiRes.json();
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: `Failed to fetch artifacts: ${err.message}` });
+  }
+});
+
+// 12c. LIST PENDING APPROVALS
+app.get("/api/mind-ai/approvals", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const mindAiRes = await fetch(`${MIND_AI_SERVICE_URL}/approvals?owner_id=${encodeURIComponent(user.id)}`, {
+      headers: {
+        "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY
+      }
+    });
+
+    if (!mindAiRes.ok) {
+      return res.status(mindAiRes.status).json({ error: "Failed to fetch approvals." });
+    }
+    const data = await mindAiRes.json();
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: `Failed to fetch approvals: ${err.message}` });
+  }
+});
+
+// 12d. LIST TASK TEMPLATES
+app.get("/api/mind-ai/templates", async (req, res) => {
+  try {
+    const mindAiRes = await fetch(`${MIND_AI_SERVICE_URL}/templates`, {
+      headers: {
+        "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY
+      }
+    });
+
+    if (!mindAiRes.ok) {
+      return res.status(mindAiRes.status).json({ error: "Failed to fetch templates." });
+    }
+    const data = await mindAiRes.json();
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: `Failed to fetch templates: ${err.message}` });
+  }
+});
+
+// 12e. MODEL REGISTRY VERSIONS & LINEAGE
+app.get("/api/mind-ai/models/versions", async (req, res) => {
+  try {
+    const mindAiRes = await fetch(`${MIND_AI_SERVICE_URL}/models/versions`, {
+      headers: {
+        "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY
+      }
+    });
+
+    if (!mindAiRes.ok) {
+      return res.status(mindAiRes.status).json({ error: "Failed to fetch model registry." });
+    }
+    const data = await mindAiRes.json();
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: `Failed to fetch models: ${err.message}` });
+  }
+});
+
+// 12f. PROVIDER STATUS & HEALTH
+app.get("/api/mind-ai/providers/status", async (req, res) => {
+  try {
+    const mindAiRes = await fetch(`${MIND_AI_SERVICE_URL}/providers/status`, {
+      headers: {
+        "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY
+      }
+    });
+
+    if (!mindAiRes.ok) {
+      return res.status(mindAiRes.status).json({ error: "Failed to fetch provider status." });
+    }
+    const data = await mindAiRes.json();
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: `Failed to fetch provider status: ${err.message}` });
+  }
+});
+
+// 12g. USAGE & SUBSCRIPTION ENTITLEMENTS
+app.get("/api/mind-ai/subscription/status", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const mindAiRes = await fetch(`${MIND_AI_SERVICE_URL}/subscription/status`, {
+      headers: {
+        "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY,
+        "X-User-Id": user.id
+      }
+    });
+
+    if (!mindAiRes.ok) {
+      return res.status(mindAiRes.status).json({ error: "Failed to fetch subscription status." });
+    }
+    const data = await mindAiRes.json();
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: `Failed to fetch subscription status: ${err.message}` });
+  }
+});
+
+// 12h. ADMIN DASHBOARD (SERVER-SIDE ENFORCED)
+app.get("/api/mind-ai/admin/overview", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const adminEmails = (process.env.ADMIN_EMAILS || "chetanaagle2007@gmail.com").split(",").map(e => e.trim().toLowerCase());
+    const isServerAdmin = adminEmails.includes((user.email || "").toLowerCase()) || user.user_metadata?.isAdmin === true;
+    if (!isServerAdmin) {
+      return res.status(403).json({ error: "Administrator privileges required. Verified server-side." });
+    }
+
+    const adminKey = process.env.MIND_AI_ADMIN_KEY || MIND_AI_SERVICE_KEY;
+    const mindAiRes = await fetch(`${MIND_AI_SERVICE_URL}/admin/overview`, {
+      headers: {
+        "X-MIND-AI-Admin-Key": adminKey,
+        "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY
+      }
+    });
+
+    if (!mindAiRes.ok) {
+      return res.status(mindAiRes.status).json({ error: "Admin overview unavailable." });
+    }
+    const data = await mindAiRes.json();
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: `Admin overview error: ${err.message}` });
   }
 });
 
