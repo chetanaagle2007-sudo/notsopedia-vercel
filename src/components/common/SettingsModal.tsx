@@ -415,7 +415,47 @@ export function SettingsModal({
                     <option value="notes-expert">Library Notes Chat (Grounded in Peer Notes)</option>
                     <option value="exam-prep">Exam Textbook Pro (Detailed Exam Questions)</option>
                     <option value="news-gk">Live Web Grounding (General & Science)</option>
+                    <option value="concept-explainer">Concept Explainer (Intuition & Analogies)</option>
+                    <option value="revision-planner">Revision Roadmap Planner (High-Yield Milestones)</option>
+                    <option value="summary">High-Yield Study Summary (Cheatsheet & Core Formulas)</option>
+                    <option value="mcq-generator">MCQ Practice Generator (Self-Test Questions)</option>
                   </select>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                  <label className="block font-semibold text-slate-800 dark:text-slate-200">
+                    Data Export & Local Backup
+                  </label>
+                  <p className="text-slate-500 text-[11px]">
+                    Export your saved library bookmarks, local quiz attempts, and study collections as a JSON archive.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        const exportData = {
+                          exportedAt: new Date().toISOString(),
+                          theme,
+                          defaultAiMode,
+                          quizHistory: JSON.parse(localStorage.getItem("notsopedia_quiz_history") || "[]"),
+                          collections: JSON.parse(localStorage.getItem(`notsopedia_collections_${signedInUser?.id || "guest"}`) || "[]")
+                        };
+                        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `notsopedia-backup-${new Date().toISOString().slice(0, 10)}.json`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        setActionSuccess("Study data exported successfully.");
+                      } catch (err) {
+                        setActionError("Failed to export data.");
+                      }
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold transition"
+                  >
+                    Export Study Data (JSON)
+                  </button>
                 </div>
               </div>
             )}

@@ -22,6 +22,14 @@ import { Flame, Clock, Paperclip, Sparkles, LayoutGrid, Layers, ArrowRight, Book
 import { NoteUploadModal } from "./components/upload/NoteUploadModal";
 import { NoteReaderModal } from "./components/reader/NoteReaderModal";
 
+// Dashboard, Collections & Premium Components
+import { StudentDashboard } from "./components/dashboard/StudentDashboard";
+import { StudyCollectionsModal } from "./components/collections/StudyCollectionsModal";
+import { SubscriptionModal } from "./components/subscription/SubscriptionModal";
+import { InteractiveQuizModal } from "./components/quiz/InteractiveQuizModal";
+import { FlashcardViewerModal } from "./components/flashcards/FlashcardViewerModal";
+import { Flashcard, QuizQuestion } from "./types";
+
 // Settings Component
 import { SettingsModal } from "./components/common/SettingsModal";
 
@@ -39,7 +47,7 @@ import { supabase } from "./supabase";
 
 function NotsopediaApp() {
   // Navigation & View State
-  const [activeTab, setActiveTab] = useState<"explorer" | "ai-tutor" | "admin-portal">("explorer");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "explorer" | "ai-tutor" | "admin-portal">("dashboard");
   const [userNotes, setUserNotes] = useState<UserNote[]>([]);
   const [likedNoteIds, setLikedNoteIds] = useState<Set<string>>(() => new Set());
   const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(() => new Set());
@@ -66,6 +74,98 @@ function NotsopediaApp() {
   const [editingNote, setEditingNote] = useState<UserNote | null>(null);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [authModalIsAdmin, setAuthModalIsAdmin] = useState<boolean>(false);
+
+  // Additional Premium Modals
+  const [showCollectionsModal, setShowCollectionsModal] = useState<boolean>(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState<boolean>(false);
+
+  // Standalone Quiz & Flashcard Modals triggered from Dashboard
+  const [activeQuizNote, setActiveQuizNote] = useState<UserNote | null>(null);
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState<boolean>(false);
+  const [quizError, setQuizError] = useState<string | null>(null);
+
+  const [activeFlashcardNote, setActiveFlashcardNote] = useState<UserNote | null>(null);
+  const [flashcardDeck, setFlashcardDeck] = useState<Flashcard[]>([]);
+  const [isGeneratingFlashcards, setIsGeneratingFlashcards] = useState<boolean>(false);
+  const [flashcardError, setFlashcardError] = useState<string | null>(null);
+
+  const handleOpenQuizFromDashboard = async (note: UserNote, difficulty: "easy" | "medium" | "hard" = "medium", count: number = 5) => {
+    setActiveQuizNote(note);
+    setIsGeneratingQuiz(true);
+    setQuizError(null);
+    setQuizQuestions([]);
+
+    try {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setQuizError("Please sign in to take interactive quizzes.");
+        showToast("Please sign in to take practice quizzes.", "info");
+        setShowAuthModal(true);
+        return;
+      }
+
+      const res = await fetch(`/api/notes/${encodeURIComponent(note.id)}/quiz`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ difficulty, questionCount: count })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to generate study quiz.");
+      }
+      setQuizQuestions(Array.isArray(data.quiz) ? data.quiz : []);
+    } catch (err: any) {
+      setQuizError(err.message || "Failed to generate study quiz.");
+    } finally {
+      setIsGeneratingQuiz(false);
+    }
+  };
+
+  const handleOpenFlashcardsFromDashboard = async (note: UserNote) => {
+    setActiveFlashcardNote(note);
+    setIsGeneratingFlashcards(true);
+    setFlashcardError(null);
+    setFlashcardDeck([]);
+
+    try {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setFlashcardError("Please sign in to study flashcards.");
+        showToast("Please sign in to study flashcards.", "info");
+        setShowAuthModal(true);
+        return;
+      }
+
+      const res = await fetch(`/api/notes/${encodeURIComponent(note.id)}/flashcards`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to generate study flashcards.");
+      }
+      setFlashcardDeck(Array.isArray(data.flashcards) ? data.flashcards : []);
+    } catch (err: any) {
+      setFlashcardError(err.message || "Failed to generate study flashcards.");
+    } finally {
+      setIsGeneratingFlashcards(false);
+    }
+  };
 
   // User Session
   const [signedInUser, setSignedInUser] = useState<SignedInUser | null>(null);
@@ -257,13 +357,13 @@ function NotsopediaApp() {
   };
 
   // Toast feedback helper
-  const showToast = (message: string, type: "success" | "error") => {
-    if (type === "success") {
-      setNotesSuccessMessage(message);
-      setTimeout(() => setNotesSuccessMessage(""), 4500);
-    } else {
+  const showToast = (message: string, type: "success" | "error" | "info" = "success") => {
+    if (type === "error") {
       setNotesError(message);
       setTimeout(() => setNotesError(""), 4500);
+    } else {
+      setNotesSuccessMessage(message);
+      setTimeout(() => setNotesSuccessMessage(""), 4500);
     }
   };
 
@@ -1367,6 +1467,7 @@ ${note.content || "No text content was provided."}
         mobileMenuOpen={mobileMenuOpen}
         onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)}
         onOpenSettings={() => setShowSettingsModal(true)}
+        onOpenMembership={() => setShowSubscriptionModal(true)}
       />
 
       {/* AppShell Two-Column Layout */}
@@ -1395,10 +1496,34 @@ ${note.content || "No text content was provided."}
             setActiveTab("explorer");
             setFilterSavedOnly((prev) => !prev);
           }}
+          onOpenCollections={() => setShowCollectionsModal(true)}
         />
 
         {/* Main Content Area */}
         <main className="flex-1 min-w-0 p-4 md:p-8 space-y-8">
+          {/* TAB 0: STUDENT LEARNING DASHBOARD */}
+          {activeTab === "dashboard" && (
+            <StudentDashboard
+              userNotes={userNotes}
+              likedNoteIds={likedNoteIds}
+              signedInUser={signedInUser}
+              onReadNote={setViewingNote}
+              onOpenUpload={() => {
+                if (!signedInUser) {
+                  showToast("Please sign in or connect a student profile to upload notes.", "error");
+                  handleOpenAuthModal(false);
+                  return;
+                }
+                setShowUploadForm(true);
+              }}
+              onOpenAITutor={() => setActiveTab("ai-tutor")}
+              onOpenQuizForNote={(note) => handleOpenQuizFromDashboard(note)}
+              onOpenFlashcardsForNote={(note) => handleOpenFlashcardsFromDashboard(note)}
+              onOpenCollections={() => setShowCollectionsModal(true)}
+              onNavigateToExplorer={() => setActiveTab("explorer")}
+            />
+          )}
+
           {/* TAB 1: NOTES EXPLORER */}
           {activeTab === "explorer" && (
             <div className="space-y-10">
@@ -1781,6 +1906,54 @@ ${note.content || "No text content was provided."}
           setShowAuthModal(true);
         }}
       />
+
+      {/* MODAL 6: Study Collections */}
+      <StudyCollectionsModal
+        isOpen={showCollectionsModal}
+        onClose={() => setShowCollectionsModal(false)}
+        allNotes={userNotes}
+        userId={signedInUser?.id}
+        onSelectCollectionFilter={(noteIds) => {
+          setSelectedSubjectFilter("All Subjects");
+          setActiveTab("explorer");
+          showToast(`Filtered to ${noteIds.length} collection notes.`, "info");
+        }}
+        showToast={showToast}
+      />
+
+      {/* MODAL 7: Subscription Entitlements Preview */}
+      <SubscriptionModal
+        isOpen={showSubscriptionModal}
+        onClose={() => setShowSubscriptionModal(false)}
+      />
+
+      {/* MODAL 8: Standalone Quiz Modal from Dashboard */}
+      {activeQuizNote && (
+        <InteractiveQuizModal
+          isOpen={Boolean(activeQuizNote)}
+          onClose={() => setActiveQuizNote(null)}
+          noteTitle={activeQuizNote.title}
+          noteId={activeQuizNote.id}
+          questions={quizQuestions}
+          isLoading={isGeneratingQuiz}
+          error={quizError}
+          onGenerateQuiz={(difficulty, count) => handleOpenQuizFromDashboard(activeQuizNote, difficulty, count)}
+          onRetry={() => handleOpenQuizFromDashboard(activeQuizNote)}
+        />
+      )}
+
+      {/* MODAL 9: Standalone Flashcard Modal from Dashboard */}
+      {activeFlashcardNote && (
+        <FlashcardViewerModal
+          isOpen={Boolean(activeFlashcardNote)}
+          onClose={() => setActiveFlashcardNote(null)}
+          noteTitle={activeFlashcardNote.title}
+          flashcards={flashcardDeck}
+          isLoading={isGeneratingFlashcards}
+          error={flashcardError}
+          onRetry={() => handleOpenFlashcardsFromDashboard(activeFlashcardNote)}
+        />
+      )}
     </div>
   );
 }

@@ -9,12 +9,14 @@ import {
   User,
   Tag,
   Sparkles,
-  RotateCw
+  RotateCw,
+  BrainCircuit
 } from "lucide-react";
-import { UserNote, Flashcard } from "../../types";
+import { UserNote, Flashcard, QuizQuestion } from "../../types";
 import { MarkdownRenderer } from "../common/MarkdownRenderer";
 import { UI_LABELS } from "../../constants/labels";
 import { FlashcardViewerModal } from "../flashcards/FlashcardViewerModal";
+import { InteractiveQuizModal } from "../quiz/InteractiveQuizModal";
 import { supabase } from "../../supabase";
 
 interface NoteReaderModalProps {
@@ -38,6 +40,79 @@ export function NoteReaderModal({
   const [flashcardDeck, setFlashcardDeck] = useState<Flashcard[]>([]);
   const [flashcardError, setFlashcardError] = useState<string | null>(null);
   const [deckCache, setDeckCache] = useState<Record<string, Flashcard[]>>({});
+
+  // Interactive Quiz State
+  const [showQuiz, setShowQuiz] = useState<boolean>(false);
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState<boolean>(false);
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
+  const [quizError, setQuizError] = useState<string | null>(null);
+  const [quizCache, setQuizCache] = useState<Record<string, QuizQuestion[]>>({});
+
+  const handleGenerateQuiz = async (difficulty: "easy" | "medium" | "hard" = "medium", count: number = 5) => {
+    if (!note) return;
+    if (isGeneratingQuiz) return;
+
+    setShowQuiz(true);
+
+    const cacheKey = `${note.id}-${difficulty}-${count}`;
+    if (quizCache[cacheKey] && quizCache[cacheKey].length > 0) {
+      setQuizQuestions(quizCache[cacheKey]);
+      setQuizError(null);
+      return;
+    }
+
+    if (!note.content || note.content.trim().length < 40) {
+      setQuizError("This note contains insufficient text (minimum 40 characters required) to generate quiz questions.");
+      return;
+    }
+
+    setIsGeneratingQuiz(true);
+    setQuizError(null);
+
+    try {
+      const {
+        data: { session },
+        error: sessionError
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        setQuizError("You must be signed in to generate practice quizzes. Please sign in to continue.");
+        if (showToast) {
+          showToast("Please sign in to take interactive quizzes.", "info");
+        }
+        if (onOpenAuth) {
+          onOpenAuth();
+        }
+        return;
+      }
+
+      const res = await fetch(`/api/notes/${encodeURIComponent(note.id)}/quiz`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ difficulty, questionCount: count })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to generate study quiz.");
+      }
+
+      const questions: QuizQuestion[] = Array.isArray(data.quiz) ? data.quiz : [];
+      if (questions.length === 0) {
+        throw new Error("No quiz questions could be generated from this note.");
+      }
+
+      setQuizQuestions(questions);
+      setQuizCache((prev) => ({ ...prev, [cacheKey]: questions }));
+    } catch (err: any) {
+      setQuizError(err.message || "Failed to generate study quiz. Please try again.");
+    } finally {
+      setIsGeneratingQuiz(false);
+    }
+  };
 
   const handleGenerateFlashcards = async () => {
     if (!note) return;
@@ -112,6 +187,11 @@ export function NoteReaderModal({
     };
     if (note) {
       window.addEventListener("keydown", handleKeyDown);
+      try {
+        localStorage.setItem("notsopedia_last_read_note_id", note.id);
+      } catch {
+        // ignore localStorage errors
+      }
     }
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
@@ -199,6 +279,29 @@ export function NoteReaderModal({
                 A++
               </button>
             </div>
+
+            {/* Take Interactive Quiz button */}
+            <button
+              type="button"
+              onClick={() => handleGenerateQuiz()}
+              disabled={isGeneratingQuiz}
+              className="h-8 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold flex items-center space-x-1.5 transition shadow-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
+              title={UI_LABELS.actions.startQuiz}
+              aria-label={UI_LABELS.actions.startQuiz}
+            >
+              {isGeneratingQuiz ? (
+                <>
+                  <RotateCw className="h-3.5 w-3.5 animate-spin" />
+                  <span className="hidden sm:inline">Generating Quiz...</span>
+                </>
+              ) : (
+                <>
+                  <BrainCircuit className="h-3.5 w-3.5 text-indigo-200" />
+                  <span className="hidden sm:inline">Practice Quiz</span>
+                  <span className="sm:hidden">Quiz</span>
+                </>
+              )}
+            </button>
 
             {/* Generate Flashcards button */}
             <button
@@ -365,6 +468,19 @@ export function NoteReaderModal({
         isLoading={isGeneratingFlashcards}
         error={flashcardError}
         onRetry={handleGenerateFlashcards}
+      />
+
+      {/* Interactive Quiz Assessment Modal */}
+      <InteractiveQuizModal
+        isOpen={showQuiz}
+        onClose={() => setShowQuiz(false)}
+        noteTitle={note.title}
+        noteId={note.id}
+        questions={quizQuestions}
+        isLoading={isGeneratingQuiz}
+        error={quizError}
+        onGenerateQuiz={(difficulty, count) => handleGenerateQuiz(difficulty, count)}
+        onRetry={() => handleGenerateQuiz()}
       />
     </div>
   );

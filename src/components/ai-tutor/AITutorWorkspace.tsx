@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from "react";
-import { Send, RefreshCw, Layers, Globe, BookOpen } from "lucide-react";
+import { Send, RefreshCw, Layers, Globe, BookOpen, Lightbulb, Calendar, FileText, HelpCircle } from "lucide-react";
 import { AIMode, AIChatMessage as AIChatMessageType } from "../../types";
 import { AIModeSelector } from "./AIModeSelector";
 import { AIChatMessage } from "./AIChatMessage";
@@ -51,6 +51,26 @@ export function AITutorWorkspace({
       title: "Exam Textbook Pro",
       icon: <BookOpen className="h-4 w-4 text-amber-500" />,
       color: "border-amber-500"
+    },
+    "concept-explainer": {
+      title: "Concept Explainer",
+      icon: <Lightbulb className="h-4 w-4 text-amber-500" />,
+      color: "border-amber-500"
+    },
+    "revision-planner": {
+      title: "Revision Roadmap",
+      icon: <Calendar className="h-4 w-4 text-teal-500" />,
+      color: "border-teal-500"
+    },
+    "summary": {
+      title: "High-Yield Summary",
+      icon: <FileText className="h-4 w-4 text-rose-500" />,
+      color: "border-rose-500"
+    },
+    "mcq-generator": {
+      title: "Practice Question AI",
+      icon: <HelpCircle className="h-4 w-4 text-indigo-500" />,
+      color: "border-indigo-500"
     }
   };
 

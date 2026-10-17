@@ -95,7 +95,14 @@ export interface SystemConfig {
   enableSimulator?: boolean;
 }
 
-export type AIMode = "news-gk" | "notes-expert" | "exam-prep";
+export type AIMode =
+  | "news-gk"
+  | "notes-expert"
+  | "exam-prep"
+  | "concept-explainer"
+  | "revision-planner"
+  | "summary"
+  | "mcq-generator";
 
 export type NoteSortOption = "newest" | "likes" | "title";
 
@@ -111,5 +118,56 @@ export interface Flashcard {
   front: string;
   back: string;
   topic?: string;
+}
+
+export interface QuizQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+  difficulty?: "easy" | "medium" | "hard";
+  topic?: string;
+}
+
+export interface QuizAttemptResult {
+  id: string;
+  noteId?: string;
+  noteTitle?: string;
+  totalQuestions: number;
+  score: number;
+  percentage: number;
+  answers: Record<number, number>;
+  incorrectQuestions: Array<{
+    question: string;
+    selectedOption: string;
+    correctOption: string;
+    explanation: string;
+  }>;
+  completedAt: string;
+}
+
+export interface StudyCollection {
+  id: string;
+  name: string;
+  description?: string;
+  category: "subject" | "course" | "semester" | "exam" | "revision";
+  noteIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type SubscriptionTier = "free" | "plus" | "pro" | "student-premium";
+
+export interface PlanEntitlements {
+  tier: SubscriptionTier;
+  displayName: string;
+  aiRequestsPerHour: number;
+  maxCollections: number;
+  quizQuestionsPerDay: number;
+  canExportMarkdown: boolean;
+  canExportJSON: boolean;
+  canUseAdvancedTutorModes: boolean;
+  spacedRepetitionEnabled: boolean;
 }
 

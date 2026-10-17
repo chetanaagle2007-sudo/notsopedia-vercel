@@ -23,6 +23,26 @@ export function SuggestedPrompts({ mode, onSelectPrompt }: SuggestedPromptsProps
       "Draft a 10-mark exam answer on Binary Search Tree balancing.",
       "Give a textbook definition of time-independent Schrödinger wave equation.",
       "Explain the components of Gross Domestic Product (GDP)."
+    ],
+    "concept-explainer": [
+      "Explain the intuitive analogy behind quantum superposition.",
+      "Break down dynamic programming like I'm a beginner.",
+      "How does the central limit theorem work intuitively?"
+    ],
+    "revision-planner": [
+      "Build a 3-day revision roadmap for Graph Algorithms.",
+      "Create an exam review schedule for Macroeconomics.",
+      "Prioritize core formulas for Quantum Mechanics."
+    ],
+    "summary": [
+      "Give me a high-yield cheatsheet for BFS vs DFS graph traversal.",
+      "Summarize the core Keynesian macroeconomic formulas.",
+      "Create a quick-reference summary of wave function rules."
+    ],
+    "mcq-generator": [
+      "Generate 3 practice MCQs on unweighted graph traversal.",
+      "Create multiple-choice questions on fiscal vs monetary policy.",
+      "Test my understanding of the Hamiltonian operator with MCQs."
     ]
   };
 

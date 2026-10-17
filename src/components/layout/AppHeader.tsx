@@ -11,14 +11,15 @@ import {
   X,
   LogOut,
   Edit2,
-  Settings
+  Settings,
+  GraduationCap
 } from "lucide-react";
 import { SignedInUser } from "../../types";
 import { UI_LABELS } from "../../constants/labels";
 
 interface AppHeaderProps {
-  activeTab: "explorer" | "ai-tutor" | "admin-portal";
-  setActiveTab: (tab: "explorer" | "ai-tutor" | "admin-portal") => void;
+  activeTab: "dashboard" | "explorer" | "ai-tutor" | "admin-portal";
+  setActiveTab: (tab: "dashboard" | "explorer" | "ai-tutor" | "admin-portal") => void;
   signedInUser: SignedInUser | null;
   onOpenAuthModal: (isAdmin?: boolean) => void;
   onAdminNavigation: () => void;
@@ -32,6 +33,7 @@ interface AppHeaderProps {
   mobileMenuOpen: boolean;
   onToggleMobileMenu: () => void;
   onOpenSettings?: () => void;
+  onOpenMembership?: () => void;
 }
 
 export function AppHeader({
@@ -48,7 +50,8 @@ export function AppHeader({
   onToggleTheme,
   mobileMenuOpen,
   onToggleMobileMenu,
-  onOpenSettings
+  onOpenSettings,
+  onOpenMembership
 }: AppHeaderProps) {
   return (
     <header className="sticky top-0 z-40 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 transition-colors">
@@ -68,8 +71,8 @@ export function AppHeader({
           <button
             type="button"
             className="flex items-center space-x-2.5 select-none group text-left rounded-xl focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500 p-1"
-            onClick={() => setActiveTab("explorer")}
-            aria-label="Notsopedia Home — Go to Explore Notes"
+            onClick={() => setActiveTab("dashboard")}
+            aria-label="Notsopedia Home — Go to Dashboard"
           >
             <div className="flex items-center justify-center w-9 h-9 font-serif italic text-lg font-black text-white bg-gradient-to-br from-emerald-600 to-slate-900 dark:from-emerald-500 dark:to-teal-800 rounded-xl shadow-xs group-hover:scale-105 transition-transform">
               N
@@ -95,6 +98,20 @@ export function AppHeader({
           className="hidden md:flex items-center bg-slate-100 dark:bg-slate-800/70 p-1 rounded-xl border border-slate-200/70 dark:border-slate-700/60"
           aria-label="Primary navigation"
         >
+          <button
+            type="button"
+            onClick={() => setActiveTab("dashboard")}
+            aria-current={activeTab === "dashboard" ? "page" : undefined}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+              activeTab === "dashboard"
+                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-bold"
+                : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-700/30"
+            }`}
+          >
+            <GraduationCap className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+            <span>Student Hub</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveTab("explorer")}

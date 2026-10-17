@@ -1,5 +1,5 @@
 import React from "react";
-import { Globe, Layers, BookOpen, Lightbulb, Compass } from "lucide-react";
+import { Globe, Layers, BookOpen, Lightbulb, Compass, BrainCircuit, Calendar, FileText, HelpCircle } from "lucide-react";
 import { AIMode } from "../../types";
 
 interface AIModeSelectorProps {
@@ -41,6 +41,34 @@ export function AIModeSelector({
       description: "Generates structured exam-ready outlines with definitions, step-by-step mechanics, and examples.",
       icon: <BookOpen className="h-4 w-4 text-amber-600 dark:text-amber-400" />,
       badge: "Structured"
+    },
+    {
+      id: "concept-explainer",
+      title: "Concept Explainer",
+      description: "Breaks down hard concepts using intuitive analogies, mental models, and step-by-step intuition.",
+      icon: <Lightbulb className="h-4 w-4 text-amber-500" />,
+      badge: "Intuitive"
+    },
+    {
+      id: "revision-planner",
+      title: "Revision Roadmap",
+      description: "Creates prioritized study timelines, core milestone checklists, and active recall cues.",
+      icon: <Calendar className="h-4 w-4 text-teal-600 dark:text-teal-400" />,
+      badge: "Roadmap"
+    },
+    {
+      id: "summary",
+      title: "High-Yield Summary",
+      description: "Executive study overview with key principles, formulas, and cheatsheet takeaways.",
+      icon: <FileText className="h-4 w-4 text-rose-500" />,
+      badge: "Cheatsheet"
+    },
+    {
+      id: "mcq-generator",
+      title: "Practice Question AI",
+      description: "Generates multiple-choice practice questions with full answer keys and rationales.",
+      icon: <HelpCircle className="h-4 w-4 text-indigo-500" />,
+      badge: "Practice"
     }
   ];
 
