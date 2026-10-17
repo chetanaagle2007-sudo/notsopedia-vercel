@@ -188,6 +188,86 @@ const mockMindAiServer = http.createServer((req, res) => {
       return res.end(Buffer.from("PK-MOCK-PPTX-BYTES-CONTENT"));
     }
 
+    // Handle email endpoints
+    if (req.url === "/email/generate-subject" && req.method === "POST") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ subject: "Formal Notice: Request for Assignment Extension", tone: "formal" }));
+    }
+    if (req.url === "/email/generate-body" && req.method === "POST") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ body: "Dear Professor,\n\nI am writing to formally request an extension.", tone: "formal" }));
+    }
+    if (req.url === "/email/draft" && req.method === "POST") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        draft_id: "emldraft_abc123",
+        recipient: lastMindAiPayload?.recipient,
+        subject: lastMindAiPayload?.subject,
+        body: lastMindAiPayload?.body,
+        status: "awaiting_approval",
+        approval_hash: null,
+      }));
+    }
+    if (req.url === "/email/draft/emldraft_abc123/approve" && req.method === "POST") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        draft_id: "emldraft_abc123",
+        status: "approved",
+        approval_hash: "hash-456",
+      }));
+    }
+    if (req.url === "/email/draft/emldraft_abc123/send" && req.method === "POST") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        draft_id: "emldraft_abc123",
+        status: "submitted",
+        provider_message_id: "msg-789",
+      }));
+    }
+
+    // Handle presentation endpoints
+    if (req.url === "/presentations/outline" && req.method === "POST") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        slides: [{ title: "Introduction" }, { title: "Core Concepts" }],
+        total_slides: 2,
+      }));
+    }
+
+    // Handle project endpoints
+    if (req.url === "/projects/plan" && req.method === "POST") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        project_id: "proj_999",
+        name: lastMindAiPayload?.name,
+        files: [{ path: "main.py" }],
+      }));
+    }
+    if (req.url === "/projects/proj_999/test" && req.method === "POST") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        project_id: "proj_999",
+        test_results: { passed: true, executed: 2 },
+      }));
+    }
+
+    // Handle connectors & workflows
+    if (req.url === "/connectors" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        connectors: [{ provider: "google_workspace", operations_count: 3 }],
+      }));
+    }
+    if (req.url === "/workflows/run" && req.method === "POST") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        workflow_id: "wf-111",
+        name: lastMindAiPayload?.name,
+        status: "awaiting_approval",
+        current_step_index: 0,
+      }));
+    }
+
     res.writeHead(404, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ detail: "Not found" }));
   });
@@ -378,7 +458,97 @@ await test("9. Upstream service authentication rejection yields 502 Bad Gateway"
   mockMindAiStatusCode = 200;
 });
 
+await test("10. POST /api/mind-ai/email/generate-subject & body independently generate content", async () => {
+  const subjRes = await requestApp(
+    "POST",
+    "/api/mind-ai/email/generate-subject",
+    { prompt: "Request extension on final project", tone: "formal" },
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(subjRes.status, 200);
+  assert.ok(subjRes.body.subject.includes("Formal Notice"));
+
+  const bodyRes = await requestApp(
+    "POST",
+    "/api/mind-ai/email/generate-body",
+    { prompt: "I need 2 more days", tone: "formal" },
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(bodyRes.status, 200);
+  assert.ok(bodyRes.body.body.includes("Dear Professor"));
+});
+
+await test("11. Email draft lifecycle: draft -> approve -> send with student identity", async () => {
+  const draftRes = await requestApp(
+    "POST",
+    "/api/mind-ai/email/draft",
+    { recipient: "prof@university.edu", subject: "Extension", body: "Hello" },
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(draftRes.status, 200);
+  assert.strictEqual(draftRes.body.draft_id, "emldraft_abc123");
+
+  const approveRes = await requestApp(
+    "POST",
+    "/api/mind-ai/email/draft/emldraft_abc123/approve",
+    {},
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(approveRes.status, 200);
+  assert.strictEqual(approveRes.body.status, "approved");
+
+  const sendRes = await requestApp(
+    "POST",
+    "/api/mind-ai/email/draft/emldraft_abc123/send",
+    { idempotency_key: "idem-key-1" },
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(sendRes.status, 200);
+  assert.strictEqual(sendRes.body.status, "submitted");
+});
+
+await test("12. Presentation and Project routes forward securely", async () => {
+  const presRes = await requestApp(
+    "POST",
+    "/api/mind-ai/presentations/outline",
+    { topic: "Quantum Mechanics", slide_count: 5 },
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(presRes.status, 200);
+  assert.strictEqual(presRes.body.total_slides, 2);
+
+  const projRes = await requestApp(
+    "POST",
+    "/api/mind-ai/projects/plan",
+    { name: "FastAPI Project", project_type: "fastapi_service" },
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(projRes.status, 200);
+  assert.strictEqual(projRes.body.project_id, "proj_999");
+});
+
+await test("13. Connectors & Workflows routes forward with authentication", async () => {
+  const connRes = await requestApp(
+    "GET",
+    "/api/mind-ai/connectors",
+    undefined,
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(connRes.status, 200);
+  assert.strictEqual(connRes.body.connectors[0].provider, "google_workspace");
+
+  const wfRes = await requestApp(
+    "POST",
+    "/api/mind-ai/workflows/run",
+    { name: "Multi-step Pipeline", steps: [{ name: "Step 1", action_type: "notify" }] },
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(wfRes.status, 200);
+  assert.strictEqual(wfRes.body.workflow_id, "wf-111");
+});
+
 // Teardown test servers
+
 appServer.close();
 mockMindAiServer.close();
 mockSupabaseServer.close();

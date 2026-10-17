@@ -2328,6 +2328,317 @@ app.get("/api/mind-ai/artifacts/:type/:id/download", async (req, res) => {
   }
 });
 
+// 13. DEDICATED EMAIL STUDIO PROXIES
+app.post("/api/mind-ai/email/generate-subject", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/email/generate-subject`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY },
+      body: JSON.stringify(req.body)
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to generate subject." });
+  }
+});
+
+app.post("/api/mind-ai/email/generate-body", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const payload = { ...req.body, owner_id: user.id };
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/email/generate-body`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY },
+      body: JSON.stringify(payload)
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to generate body." });
+  }
+});
+
+app.post("/api/mind-ai/email/draft", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const payload = { ...req.body, owner_id: user.id };
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/email/draft`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY },
+      body: JSON.stringify(payload)
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to create email draft." });
+  }
+});
+
+app.put("/api/mind-ai/email/draft/:id", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const payload = { ...req.body, owner_id: user.id };
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/email/draft/${encodeURIComponent(req.params.id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY },
+      body: JSON.stringify(payload)
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to update email draft." });
+  }
+});
+
+app.post("/api/mind-ai/email/draft/:id/approve", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/email/draft/${encodeURIComponent(req.params.id)}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY },
+      body: JSON.stringify({ owner_id: user.id })
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to approve email draft." });
+  }
+});
+
+app.post("/api/mind-ai/email/draft/:id/send", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/email/draft/${encodeURIComponent(req.params.id)}/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY },
+      body: JSON.stringify({ owner_id: user.id, idempotency_key: req.body?.idempotency_key })
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to send email." });
+  }
+});
+
+// 14. PRESENTATION STUDIO PROXIES
+app.post("/api/mind-ai/presentations/outline", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/presentations/outline`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY },
+      body: JSON.stringify(req.body)
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to create presentation outline." });
+  }
+});
+
+app.post("/api/mind-ai/presentations/generate", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/presentations/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY },
+      body: JSON.stringify(req.body)
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to generate presentation deck." });
+  }
+});
+
+// 15. PROJECT BUILDER PROXIES
+app.post("/api/mind-ai/projects/plan", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/projects/plan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY },
+      body: JSON.stringify(req.body)
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to create project plan." });
+  }
+});
+
+app.post("/api/mind-ai/projects/build", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/projects/build`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY },
+      body: JSON.stringify(req.body)
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to build project files." });
+  }
+});
+
+app.post("/api/mind-ai/projects/:id/test", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/projects/${encodeURIComponent(req.params.id)}/test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY }
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to execute project tests." });
+  }
+});
+
+app.post("/api/mind-ai/projects/:id/repair", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/projects/${encodeURIComponent(req.params.id)}/repair`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY }
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to repair project." });
+  }
+});
+
+// 16. SAAS CONNECTORS & WORKFLOWS PROXIES
+app.get("/api/mind-ai/connectors", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/connectors`, {
+      headers: { "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY }
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to fetch connectors." });
+  }
+});
+
+app.post("/api/mind-ai/connectors/execute", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/connectors/execute`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY },
+      body: JSON.stringify(req.body)
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to execute connector operation." });
+  }
+});
+
+app.post("/api/mind-ai/workflows/run", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const payload = { ...req.body, owner_id: user.id };
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/workflows/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY },
+      body: JSON.stringify(payload)
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to run workflow." });
+  }
+});
+
+app.post("/api/mind-ai/workflows/:id/approve/:stepId", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const upstream = await fetch(
+      `${MIND_AI_SERVICE_URL}/workflows/${encodeURIComponent(req.params.id)}/approve/${encodeURIComponent(req.params.stepId)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY }
+      }
+    );
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to approve workflow step." });
+  }
+});
+
+
 // Setup Vite or Production Static Serving
 async function startServer() {
 
