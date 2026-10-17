@@ -105,7 +105,13 @@ export function AIWorkspaceModal({
   authToken
 }: AIWorkspaceModalProps) {
   // Navigation & Shell State
-  const [activeTool, setActiveTool] = useState<WorkspaceTool>("presentation");
+  const [activeTool, setActiveTool] = useState<WorkspaceTool>(() => {
+    try {
+      const saved = localStorage.getItem("mind_ai_active_tool");
+      if (saved) return saved as WorkspaceTool;
+    } catch {}
+    return "chat";
+  });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem("mind_ai_sidebar_collapsed") === "true";
@@ -258,6 +264,14 @@ export function AIWorkspaceModal({
       } catch {}
       return next;
     });
+  };
+
+  // Persist active tool state
+  const handleSelectTool = (tool: WorkspaceTool) => {
+    setActiveTool(tool);
+    try {
+      localStorage.setItem("mind_ai_active_tool", tool);
+    } catch {}
   };
 
   // Prepopulate from selected note
@@ -1605,6 +1619,25 @@ export function AIWorkspaceModal({
 
           {/* Center Workspace Stage */}
           <main className="flex-1 flex flex-col overflow-y-auto bg-white dark:bg-slate-900 relative">
+            {activeTool !== "chat" && (
+              <div className="h-10 px-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-sm flex items-center justify-between flex-shrink-0 z-10">
+                <div className="flex items-center space-x-2 text-xs">
+                  <span className="text-slate-400">Workspace /</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200 capitalize">
+                    {activeTool.replace(/_/g, " ")}
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleSelectTool("chat")}
+                  className="px-2.5 py-1 rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 flex items-center space-x-1.5 transition-colors border border-indigo-200/50 dark:border-indigo-800/50"
+                  title="Return to primary conversation & workspace"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Back to Workspace</span>
+                </button>
+              </div>
+            )}
+
             {/* 1. PRESENTATION STUDIO (Split Layout) */}
             {activeTool === "presentation" && (
               <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
