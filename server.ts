@@ -2408,11 +2408,46 @@ app.put("/api/mind-ai/email/draft/:id", async (req, res) => {
   }
 });
 
+app.get("/api/mind-ai/email/draft/:id", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/email/draft/${encodeURIComponent(req.params.id)}?owner_id=${encodeURIComponent(user.id)}`, {
+      headers: { "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY }
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to fetch email draft." });
+  }
+});
+
+app.get("/api/mind-ai/email/status", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
+    const { data: { user } } = await requestSupabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: "Authentication is required." });
+
+    const upstream = await fetch(`${MIND_AI_SERVICE_URL}/email/status`, {
+      headers: { "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY }
+    });
+    const data = await upstream.json();
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to fetch email status." });
+  }
+});
+
 app.post("/api/mind-ai/email/draft/:id/approve", async (req, res) => {
   try {
     const requestSupabase = createRequestSupabase(req);
     if (!requestSupabase) return res.status(401).json({ error: "Authentication is required." });
     const { data: { user } } = await requestSupabase.auth.getUser();
+
     if (!user) return res.status(401).json({ error: "Authentication is required." });
 
     const upstream = await fetch(`${MIND_AI_SERVICE_URL}/email/draft/${encodeURIComponent(req.params.id)}/approve`, {

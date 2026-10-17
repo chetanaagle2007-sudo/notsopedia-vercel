@@ -224,6 +224,29 @@ const mockMindAiServer = http.createServer((req, res) => {
         provider_message_id: "msg-789",
       }));
     }
+    if (req.url?.startsWith("/email/draft/emldraft_abc123") && req.method === "GET") {
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        draft_id: "emldraft_abc123",
+        recipient: "prof@university.edu",
+        subject: "Extension",
+        body: "Hello",
+        status: "approved",
+        approval_hash: "hash-456",
+        cc: [],
+        bcc: []
+      }));
+    }
+    if (req.url === "/email/status" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        status: "disconnected",
+        token_configured: false,
+        confirmation_required: true
+      }));
+    }
+
 
     // Handle presentation endpoints
     if (req.url === "/presentations/outline" && req.method === "POST") {
@@ -547,7 +570,33 @@ await test("13. Connectors & Workflows routes forward with authentication", asyn
   assert.strictEqual(wfRes.body.workflow_id, "wf-111");
 });
 
+await test("14. GET /api/mind-ai/email/draft/:id returns draft details with student isolation", async () => {
+
+  const getDraftRes = await requestApp(
+    "GET",
+    "/api/mind-ai/email/draft/emldraft_abc123",
+    undefined,
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(getDraftRes.status, 200);
+  assert.strictEqual(getDraftRes.body.draft_id, "emldraft_abc123");
+  assert.strictEqual(getDraftRes.body.recipient, "prof@university.edu");
+});
+
+await test("15. GET /api/mind-ai/email/status returns configuration transparency without credentials", async () => {
+  const statusRes = await requestApp(
+    "GET",
+    "/api/mind-ai/email/status",
+    undefined,
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(statusRes.status, 200);
+  assert.strictEqual(statusRes.body.status, "disconnected");
+  assert.strictEqual(statusRes.body.token_configured, false);
+});
+
 // Teardown test servers
+
 
 appServer.close();
 mockMindAiServer.close();
