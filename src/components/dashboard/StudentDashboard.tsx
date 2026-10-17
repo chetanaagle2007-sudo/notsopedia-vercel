@@ -29,6 +29,7 @@ interface StudentDashboardProps {
   onOpenFlashcardsForNote: (note: UserNote) => void;
   onOpenCollections: () => void;
   onNavigateToExplorer: () => void;
+  onOpenAIWorkspace?: (note?: UserNote) => void;
 }
 
 export function StudentDashboard({
@@ -41,7 +42,8 @@ export function StudentDashboard({
   onOpenQuizForNote,
   onOpenFlashcardsForNote,
   onOpenCollections,
-  onNavigateToExplorer
+  onNavigateToExplorer,
+  onOpenAIWorkspace
 }: StudentDashboardProps) {
   // Load real quiz history from localStorage
   const quizHistory: QuizAttemptResult[] = useMemo(() => {
@@ -120,6 +122,17 @@ export function StudentDashboard({
               <Sparkles className="h-3.5 w-3.5" />
               <span>Ask AI Tutor</span>
             </button>
+
+            {onOpenAIWorkspace && (
+              <button
+                type="button"
+                onClick={() => onOpenAIWorkspace(lastReadNote || undefined)}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center space-x-1.5 transition shadow-sm cursor-pointer"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>AI Workspace</span>
+              </button>
+            )}
 
             <button
               type="button"

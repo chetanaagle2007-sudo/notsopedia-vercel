@@ -34,6 +34,7 @@ interface AppHeaderProps {
   onToggleMobileMenu: () => void;
   onOpenSettings?: () => void;
   onOpenMembership?: () => void;
+  onOpenAIWorkspace?: () => void;
 }
 
 export function AppHeader({
@@ -51,7 +52,8 @@ export function AppHeader({
   mobileMenuOpen,
   onToggleMobileMenu,
   onOpenSettings,
-  onOpenMembership
+  onOpenMembership,
+  onOpenAIWorkspace
 }: AppHeaderProps) {
   return (
     <header className="sticky top-0 z-40 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 transition-colors">
@@ -157,8 +159,21 @@ export function AppHeader({
           )}
         </nav>
 
-        {/* Global actions: Download Presentation, Theme Toggle, User Profile */}
+        {/* Global actions: AI Workspace, Download Presentation, Theme Toggle, User Profile */}
         <div className="flex items-center space-x-2">
+          {/* AI Workspace Button */}
+          {onOpenAIWorkspace && (
+            <button
+              type="button"
+              onClick={onOpenAIWorkspace}
+              className="inline-flex h-9 px-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl text-xs font-semibold transition items-center space-x-1.5 shadow-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
+              title="Launch MIND-AI Autonomous Workspace"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-indigo-200" />
+              <span className="hidden sm:inline">AI Workspace</span>
+            </button>
+          )}
+
           {/* Download Presentation Button */}
           <button
             type="button"

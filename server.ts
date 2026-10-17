@@ -2079,6 +2079,255 @@ app.post("/api/ai/ask", async (req, res) => {
   }
 });
 
+// 9. SECURE MIND-AI UNIVERSAL TASK ENGINE GATEWAY
+app.post("/api/mind-ai/universal-task", async (req, res) => {
+  try {
+    const { goal, category, parameters, noteIds } = req.body;
+    if (!goal || typeof goal !== "string" || !goal.trim()) {
+      return res.status(400).json({ error: "A clear goal or instruction is required." });
+    }
+
+    // 1. Authenticate student via request-scoped Supabase client
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) {
+      return res.status(401).json({
+        error: "Authentication is required to launch AI Workspace tasks."
+      });
+    }
+
+    const {
+      data: { user },
+      error: userError
+    } = await requestSupabase.auth.getUser();
+
+    if (userError || !user) {
+      return res.status(401).json({
+        error: "Authentication is required to launch AI Workspace tasks."
+      });
+    }
+
+    // 2. If noteIds provided, retrieve note contents under user RLS
+    let attachedNoteContext = "";
+    if (Array.isArray(noteIds) && noteIds.length > 0) {
+      try {
+        const { data: notesData } = await requestSupabase
+          .from("notes")
+          .select("id, title, content, subject_name")
+          .in("id", noteIds.slice(0, 5));
+        if (notesData && notesData.length > 0) {
+          attachedNoteContext = notesData
+            .map((n: any) => `### Note: ${n.title} (${n.subject_name || "General"})\n${String(n.content || "").slice(0, 4000)}`)
+            .join("\n\n");
+        }
+      } catch (dbErr) {
+        console.warn("[MIND-AI GATEWAY] Note context retrieval non-fatal error:", dbErr);
+      }
+    }
+
+    // 3. Construct payload for MIND-AI universal task engine
+    const combinedParameters = {
+      ...(parameters || {}),
+      requester_email: user.email,
+      requester_id: user.id,
+      ...(attachedNoteContext ? { attached_notes: attachedNoteContext } : {})
+    };
+
+    const mindAiPayload = {
+      goal: goal.trim(),
+      owner_id: user.id,
+      category: category || undefined,
+      parameters: combinedParameters
+    };
+
+    const MIND_AI_TIMEOUT_MS = parseInt(process.env.MIND_AI_TASK_TIMEOUT_MS || "30000", 10);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), MIND_AI_TIMEOUT_MS);
+
+    try {
+      const mindAiRes = await fetch(`${MIND_AI_SERVICE_URL}/tasks/universal`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY
+        },
+        body: JSON.stringify(mindAiPayload),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (mindAiRes.status === 401 || mindAiRes.status === 403) {
+        console.error(`[MIND-AI GATEWAY] Task submission failed with HTTP ${mindAiRes.status}.`);
+        return res.status(502).json({ error: "MIND-AI service authentication failed." });
+      }
+
+      const json = await mindAiRes.json();
+      if (!mindAiRes.ok) {
+        return res.status(mindAiRes.status).json({
+          error: json.detail || "MIND-AI task submission failed."
+        });
+      }
+
+      return res.json(json);
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      const isTimeout = fetchErr.name === "AbortError" || fetchErr.code === "ABORT_ERR";
+      return res.status(503).json({
+        error: isTimeout
+          ? `MIND-AI service timed out after ${MIND_AI_TIMEOUT_MS}ms.`
+          : `Failed to connect to MIND-AI service: ${fetchErr.message || "Unknown error"}`
+      });
+    }
+  } catch (err: any) {
+    console.error("Universal task gateway error:", err);
+    return res.status(500).json({ error: "Internal server error submitting universal task." });
+  }
+});
+
+// 10. GET STUDENT'S MIND-AI TASKS
+app.get("/api/mind-ai/tasks", async (req, res) => {
+  try {
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) {
+      return res.status(401).json({ error: "Authentication is required." });
+    }
+    const {
+      data: { user },
+      error: userError
+    } = await requestSupabase.auth.getUser();
+    if (userError || !user) {
+      return res.status(401).json({ error: "Authentication is required." });
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    try {
+      const mindAiRes = await fetch(`${MIND_AI_SERVICE_URL}/tasks?owner_id=${encodeURIComponent(user.id)}`, {
+        headers: {
+          "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY
+        },
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (mindAiRes.status === 401 || mindAiRes.status === 403) {
+        return res.status(502).json({ error: "MIND-AI service authentication failed." });
+      }
+
+      const json = await mindAiRes.json();
+      return res.status(mindAiRes.status).json(json);
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      return res.status(503).json({ error: `Could not fetch tasks: ${fetchErr.message}` });
+    }
+  } catch (err: any) {
+    console.error("Fetch tasks error:", err);
+    return res.status(500).json({ error: "Internal server error fetching tasks." });
+  }
+});
+
+// 11. GET SPECIFIC TASK DETAILS
+app.get("/api/mind-ai/tasks/:id", async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) {
+      return res.status(401).json({ error: "Authentication is required." });
+    }
+    const {
+      data: { user },
+      error: userError
+    } = await requestSupabase.auth.getUser();
+    if (userError || !user) {
+      return res.status(401).json({ error: "Authentication is required." });
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    try {
+      const mindAiRes = await fetch(`${MIND_AI_SERVICE_URL}/tasks/${encodeURIComponent(taskId)}`, {
+        headers: {
+          "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY
+        },
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (mindAiRes.status === 401 || mindAiRes.status === 403) {
+        return res.status(502).json({ error: "MIND-AI service authentication failed." });
+      }
+
+      if (!mindAiRes.ok) {
+        const json = await mindAiRes.json().catch(() => ({}));
+        return res.status(mindAiRes.status).json(json);
+      }
+
+      const task = await mindAiRes.json();
+      if (task.owner_id && task.owner_id !== user.id && !user.user_metadata?.isAdmin) {
+        return res.status(403).json({ error: "You are not authorized to view this task." });
+      }
+
+      return res.json(task);
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      return res.status(503).json({ error: `Could not fetch task details: ${fetchErr.message}` });
+    }
+  } catch (err: any) {
+    console.error("Fetch task details error:", err);
+    return res.status(500).json({ error: "Internal server error fetching task details." });
+  }
+});
+
+// 12. PROXY DOWNLOAD ARTIFACTS
+app.get("/api/mind-ai/artifacts/:type/:id/download", async (req, res) => {
+  try {
+    const { type, id } = req.params;
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) {
+      return res.status(401).json({ error: "Authentication is required." });
+    }
+    const {
+      data: { user },
+      error: userError
+    } = await requestSupabase.auth.getUser();
+    if (userError || !user) {
+      return res.status(401).json({ error: "Authentication is required." });
+    }
+
+    let upstreamPath = "";
+    if (type === "presentation") {
+      upstreamPath = `/presentations/${encodeURIComponent(id)}/download`;
+    } else if (type === "project") {
+      upstreamPath = `/projects/${encodeURIComponent(id)}/download`;
+    } else {
+      return res.status(400).json({ error: "Invalid artifact type." });
+    }
+
+    const mindAiRes = await fetch(`${MIND_AI_SERVICE_URL}${upstreamPath}`, {
+      headers: {
+        "X-MIND-AI-Service-Key": MIND_AI_SERVICE_KEY
+      }
+    });
+
+    if (!mindAiRes.ok) {
+      return res.status(mindAiRes.status).json({ error: "Artifact not found or unavailable." });
+    }
+
+    const contentType = mindAiRes.headers.get("content-type") || "application/octet-stream";
+    const contentDisposition = mindAiRes.headers.get("content-disposition");
+
+    res.setHeader("Content-Type", contentType);
+    if (contentDisposition) {
+      res.setHeader("Content-Disposition", contentDisposition);
+    }
+
+    const arrayBuffer = await mindAiRes.arrayBuffer();
+    return res.send(Buffer.from(arrayBuffer));
+  } catch (err: any) {
+    console.error("Artifact download error:", err);
+    return res.status(500).json({ error: "Failed to download artifact." });
+  }
+});
+
 // Setup Vite or Production Static Serving
 async function startServer() {
 

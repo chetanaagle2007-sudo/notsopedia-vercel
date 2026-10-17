@@ -33,8 +33,9 @@ import { Flashcard, QuizQuestion } from "./types";
 // Settings Component
 import { SettingsModal } from "./components/common/SettingsModal";
 
-// AI Tutor Components
+// AI Workspace & Tutor Components
 import { AITutorWorkspace } from "./components/ai-tutor/AITutorWorkspace";
+import { AIWorkspaceModal } from "./components/workspace/AIWorkspaceModal";
 
 // Admin Components
 import { AdminPortal } from "./components/admin/AdminPortal";
@@ -89,6 +90,24 @@ function NotsopediaApp() {
   const [flashcardDeck, setFlashcardDeck] = useState<Flashcard[]>([]);
   const [isGeneratingFlashcards, setIsGeneratingFlashcards] = useState<boolean>(false);
   const [flashcardError, setFlashcardError] = useState<string | null>(null);
+
+  // Standalone Autonomous AI Workspace Modal
+  const [showAIWorkspaceModal, setShowAIWorkspaceModal] = useState<boolean>(false);
+  const [activeWorkspaceNote, setActiveWorkspaceNote] = useState<UserNote | null>(null);
+  const [currentAuthToken, setCurrentAuthToken] = useState<string | null>(null);
+
+  const handleOpenAIWorkspace = async (note?: UserNote) => {
+    setActiveWorkspaceNote(note || null);
+    try {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+      setCurrentAuthToken(session?.access_token || null);
+    } catch {
+      setCurrentAuthToken(null);
+    }
+    setShowAIWorkspaceModal(true);
+  };
 
   const handleOpenQuizFromDashboard = async (note: UserNote, difficulty: "easy" | "medium" | "hard" = "medium", count: number = 5) => {
     setActiveQuizNote(note);
@@ -1468,6 +1487,7 @@ ${note.content || "No text content was provided."}
         onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)}
         onOpenSettings={() => setShowSettingsModal(true)}
         onOpenMembership={() => setShowSubscriptionModal(true)}
+        onOpenAIWorkspace={() => handleOpenAIWorkspace()}
       />
 
       {/* AppShell Two-Column Layout */}
@@ -1521,6 +1541,7 @@ ${note.content || "No text content was provided."}
               onOpenFlashcardsForNote={(note) => handleOpenFlashcardsFromDashboard(note)}
               onOpenCollections={() => setShowCollectionsModal(true)}
               onNavigateToExplorer={() => setActiveTab("explorer")}
+              onOpenAIWorkspace={(note) => handleOpenAIWorkspace(note)}
             />
           )}
 
@@ -1954,6 +1975,15 @@ ${note.content || "No text content was provided."}
           onRetry={() => handleOpenFlashcardsFromDashboard(activeFlashcardNote)}
         />
       )}
+
+      {/* MODAL 10: MIND-AI Autonomous Workspace Modal */}
+      <AIWorkspaceModal
+        isOpen={showAIWorkspaceModal}
+        onClose={() => setShowAIWorkspaceModal(false)}
+        selectedNote={activeWorkspaceNote}
+        userNotes={userNotes}
+        authToken={currentAuthToken}
+      />
     </div>
   );
 }
