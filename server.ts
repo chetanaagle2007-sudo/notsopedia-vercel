@@ -2338,6 +2338,8 @@ app.get("/api/mind-ai/artifacts/:type/:id/download", async (req, res) => {
       upstreamPath = `/research/${encodeURIComponent(id)}/download`;
     } else if (type === "data-analysis") {
       upstreamPath = `/data-analysis/${encodeURIComponent(id)}/download`;
+    } else if (type === "study_plan" || type === "study-plan") {
+      upstreamPath = `/study-plans/${encodeURIComponent(id)}/download`;
     } else {
       return res.status(400).json({ error: "Invalid artifact type." });
     }

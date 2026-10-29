@@ -124,14 +124,30 @@ export function StudentDashboard({
             </button>
 
             {onOpenAIWorkspace && (
-              <button
-                type="button"
-                onClick={() => onOpenAIWorkspace(lastReadNote || undefined)}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center space-x-1.5 transition shadow-sm cursor-pointer"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                <span>AI Workspace</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => onOpenAIWorkspace(lastReadNote || undefined)}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center space-x-1.5 transition shadow-sm cursor-pointer"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>AI Workspace</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      localStorage.setItem("mind_ai_active_tool", "study_planner");
+                    } catch {}
+                    onOpenAIWorkspace(lastReadNote || undefined);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center space-x-1.5 transition shadow-sm cursor-pointer"
+                >
+                  <BookOpen className="h-3.5 w-3.5" />
+                  <span>Study Planner</span>
+                </button>
+              </>
             )}
 
             <button

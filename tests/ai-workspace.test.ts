@@ -187,6 +187,13 @@ const mockMindAiServer = http.createServer((req, res) => {
       });
       return res.end(Buffer.from("PK-MOCK-PPTX-BYTES-CONTENT"));
     }
+    if (req.url === "/study-plans/study_plan_7day/download" && req.method === "GET") {
+      res.writeHead(200, {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="study_plan_7day.md"'
+      });
+      return res.end("# Academic Study & Revision Plan");
+    }
 
     // Handle email endpoints
     if (req.url === "/email/generate-subject" && req.method === "POST") {
@@ -728,6 +735,18 @@ await test("22. Non-admin GET /api/mind-ai/admin/overview is rejected with HTTP 
   );
   assert.strictEqual(adminRes.status, 403);
   assert.ok(adminRes.body.error.includes("Administrator privileges required"));
+});
+
+await test("23. GET /api/mind-ai/artifacts/study_plan/:id/download proxies study plan stream", async () => {
+  const res = await requestApp(
+    "GET",
+    "/api/mind-ai/artifacts/study_plan/study_plan_7day/download",
+    undefined,
+    { Authorization: "Bearer valid-student-token" }
+  );
+  assert.strictEqual(res.status, 200);
+  assert.ok(res.headers["content-type"]?.includes("text/markdown"));
+  assert.strictEqual(res.body, "# Academic Study & Revision Plan");
 });
 
 // Teardown test servers

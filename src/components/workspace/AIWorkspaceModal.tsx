@@ -63,6 +63,7 @@ export type WorkspaceTool =
   | "research"
   | "document"
   | "data_analysis"
+  | "study_planner"
   | "saas_actions"
   | "workflows"
   | "chat"
@@ -208,6 +209,15 @@ export function AIWorkspaceModal({
   ]);
   const [isExecutingWorkflow, setIsExecutingWorkflow] = useState(false);
   const [workflowInstance, setWorkflowInstance] = useState<any | null>(null);
+
+  // Study & Revision Planner state
+  const [studySubject, setStudySubject] = useState(selectedNote?.subjectName || "");
+  const [studyGoal, setStudyGoal] = useState(selectedNote ? `Prepare revision plan for ${selectedNote.title}` : "");
+  const [studyExamDate, setStudyExamDate] = useState("Upcoming Assessment");
+  const [studyDays, setStudyDays] = useState(7);
+  const [studyHoursPerDay, setStudyHoursPerDay] = useState(2.5);
+  const [isGeneratingStudyPlan, setIsGeneratingStudyPlan] = useState(false);
+  const [generatedStudyPlan, setGeneratedStudyPlan] = useState<{ id: string; fileName: string; downloadUrl: string; title: string; daysCount: number; content?: string } | null>(null);
 
   // Task History state
   const [taskHistory, setTaskHistory] = useState<any[]>([]);
@@ -1084,6 +1094,52 @@ export function AIWorkspaceModal({
     }
   };
 
+  // 6b. Study & Revision Planner
+  const handleGenerateStudyPlan = async () => {
+    const goalText = studyGoal.trim() || `Prepare a ${studyDays}-day revision plan for ${studySubject || "Academic Subject"}`;
+    setIsGeneratingStudyPlan(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/mind-ai/universal-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({
+          goal: goalText,
+          category: "study_plan",
+          parameters: {
+            subject: studySubject || "Academic Studies",
+            exam_date: studyExamDate || "Upcoming Final Assessment",
+            days: studyDays,
+            daily_hours: studyHoursPerDay,
+            attached_notes: selectedNote ? [{ title: selectedNote.title, subject: selectedNote.subjectName }] : []
+          }
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const art = (data.artifacts || []).find((a: any) => a.type === "study_plan");
+        if (art) {
+          setGeneratedStudyPlan({
+            id: art.study_plan_id,
+            fileName: art.file_name,
+            downloadUrl: `/api/mind-ai/artifacts/study_plan/${art.study_plan_id}/download`,
+            title: art.title || goalText,
+            daysCount: art.days_count || studyDays,
+            content: data.final_response
+          });
+        }
+        setSuccessMsg(`Generated ${studyDays}-day study & revision plan!`);
+        loadHistory();
+      } else {
+        throw new Error(data.error || "Study plan generation failed.");
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsGeneratingStudyPlan(false);
+    }
+  };
+
   // 7. SaaS Actions
   const handleExecuteSaaSAction = async () => {
     if (!actionApproved) {
@@ -1424,6 +1480,22 @@ export function AIWorkspaceModal({
               >
                 <Table className="w-4 h-4 flex-shrink-0" />
                 {!isSidebarCollapsed && <span className="truncate">Data Analysis</span>}
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTool("study_planner");
+                  setSelectedTaskDetail(null);
+                }}
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2" : "space-x-3 px-3"} py-2 rounded-xl text-xs font-semibold transition-all ${
+                  activeTool === "study_planner"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                }`}
+                title="Study Planner"
+              >
+                <BookOpen className="w-4 h-4 flex-shrink-0" />
+                {!isSidebarCollapsed && <span className="truncate">Study Planner</span>}
               </button>
 
               <button
@@ -2952,6 +3024,137 @@ export function AIWorkspaceModal({
                     {generatedDoc.content && (
                       <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs leading-relaxed max-h-60 overflow-y-auto whitespace-pre-wrap font-sans">
                         {generatedDoc.content}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 10b. STUDY & REVISION PLANNER */}
+            {activeTool === "study_planner" && (
+              <div className="flex-1 p-6 max-w-4xl mx-auto w-full space-y-5 overflow-y-auto">
+                <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
+                  <h3 className="text-base font-bold flex items-center space-x-2">
+                    <BookOpen className="w-5 h-5 text-indigo-500" />
+                    <span>AI Study & Revision Planner</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Generate structured, milestone-based academic revision schedules with active recall checkpoints and spaced retrieval practice.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Subject / Academic Domain
+                    </label>
+                    <input
+                      type="text"
+                      value={studySubject}
+                      onChange={(e) => setStudySubject(e.target.value)}
+                      placeholder="e.g., Data Structures & Algorithms"
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Target Assessment Date
+                    </label>
+                    <input
+                      type="text"
+                      value={studyExamDate}
+                      onChange={(e) => setStudyExamDate(e.target.value)}
+                      placeholder="e.g., Final Exam on Nov 15th"
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Specific Study Goal / Topic Focus
+                  </label>
+                  <input
+                    type="text"
+                    value={studyGoal}
+                    onChange={(e) => setStudyGoal(e.target.value)}
+                    placeholder="e.g., Master Graph Traversal (BFS/DFS), Dynamic Programming, and Minimum Spanning Trees"
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Schedule Duration (Days)
+                    </label>
+                    <select
+                      value={studyDays}
+                      onChange={(e) => setStudyDays(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                    >
+                      <option value={3}>3 Days (Crash Revision)</option>
+                      <option value={5}>5 Days (Focused Intensive)</option>
+                      <option value={7}>7 Days (Standard Week Schedule)</option>
+                      <option value={14}>14 Days (Two-Week Mastery)</option>
+                      <option value={30}>30 Days (Full Semester Prep)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Allocated Daily Study Time
+                    </label>
+                    <select
+                      value={studyHoursPerDay}
+                      onChange={(e) => setStudyHoursPerDay(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                    >
+                      <option value={1.5}>1.5 Hours / Day (Light Review)</option>
+                      <option value={2.5}>2.5 Hours / Day (Standard Active Study)</option>
+                      <option value={3.5}>3.5 Hours / Day (Intensive Prep)</option>
+                      <option value={5.0}>5.0 Hours / Day (Immersive Sprint)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/60 text-xs text-indigo-700 dark:text-indigo-300 flex items-start space-x-2.5">
+                  <Sparkles className="w-4 h-4 mt-0.5 shrink-0 text-indigo-500" />
+                  <p>
+                    <strong>Pedagogical Strategy:</strong> The generated schedule incorporates the testing effect, spaced retrieval practice, and daily active recall checkpoints grounded in your library notes.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleGenerateStudyPlan}
+                  disabled={isGeneratingStudyPlan}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center space-x-2 transition shadow-md shadow-indigo-600/20 disabled:opacity-50"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>{isGeneratingStudyPlan ? "Synthesizing Schedule..." : "Generate Study Schedule"}</span>
+                </button>
+
+                {generatedStudyPlan && (
+                  <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <BookOpen className="w-4 h-4 text-emerald-500" />
+                        <span className="text-xs font-bold">{generatedStudyPlan.title} ({generatedStudyPlan.daysCount} Days)</span>
+                      </div>
+                      <a
+                        href={generatedStudyPlan.downloadUrl}
+                        download
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center space-x-1.5 transition"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Download Plan (.MD)</span>
+                      </a>
+                    </div>
+                    {generatedStudyPlan.content && (
+                      <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs leading-relaxed max-h-60 overflow-y-auto whitespace-pre-wrap font-sans">
+                        {generatedStudyPlan.content}
                       </div>
                     )}
                   </div>
