@@ -1590,6 +1590,7 @@ ${note.content || "No text content was provided."}
             setFilterSavedOnly((prev) => !prev);
           }}
           onOpenCollections={() => setShowCollectionsModal(true)}
+          onOpenAIWorkspace={() => handleOpenAIWorkspace()}
         />
 
         {/* Main Content Area */}
@@ -1635,10 +1636,12 @@ ${note.content || "No text content was provided."}
                   }
                 }}
                 onAskAIWithQuery={() => {
-                  if (notesSearchQuery.trim()) {
-                    setAiQuestion(notesSearchQuery.trim());
-                  }
+                  const query = notesSearchQuery.trim();
                   setActiveTab("ai-tutor");
+                  if (query) {
+                    setAiQuestion(query);
+                    handleAskAI(undefined, query);
+                  }
                 }}
                 onOpenUpload={() => {
                   if (!signedInUser) {

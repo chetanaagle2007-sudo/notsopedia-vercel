@@ -22,7 +22,7 @@ const supabase = supabaseUrl && supabaseKey
 
 // MIND-AI Service Configuration (Phase 1: internal service-to-service contract)
 // Server-only: Never prefix with VITE_ and never expose to client bundles or browser responses.
-const MIND_AI_SERVICE_URL = (process.env.MIND_AI_SERVICE_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+const MIND_AI_SERVICE_URL = (process.env.MIND_AI_SERVICE_URL || (process.env.VERCEL ? "https://mind-ai-api.onrender.com" : "http://127.0.0.1:8000")).replace(/\/+$/, "");
 const MIND_AI_SERVICE_KEY = process.env.MIND_AI_SERVICE_KEY || "";
 
 console.log("🔑 [SYSTEM CONFIG] Standalone Server Initialized.");
