@@ -1,9 +1,33 @@
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { ErrorBoundary, reportClientTelemetry } from './components/common/ErrorBoundary.tsx';
+
+// Global error handlers for autonomous telemetry ingestion
+if (typeof window !== "undefined") {
+  window.addEventListener("error", (event) => {
+    reportClientTelemetry({
+      message: event.message || "Uncaught window error",
+      stack: event.error?.stack,
+      component: "GlobalWindow",
+      url: window.location.href
+    });
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    reportClientTelemetry({
+      message: event.reason?.message || String(event.reason) || "Unhandled promise rejection",
+      stack: event.reason?.stack,
+      component: "PromiseRejection",
+      url: window.location.href
+    });
+  });
+}
 
 createRoot(document.getElementById('root')!).render(
-  <App />
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
 );
 
 // ─── PWA Service Worker Update Handling ───────────────────────────────────────

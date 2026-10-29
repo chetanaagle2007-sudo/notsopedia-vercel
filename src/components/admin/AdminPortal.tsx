@@ -27,6 +27,9 @@ interface AdminPortalProps {
   securityLogs: string[];
   isHealing: boolean;
   onRunHealing: () => void;
+  incidents?: any[];
+  onApproveIncident?: (id: string) => void;
+  deploymentStatus?: any;
   totalNotesCount: number;
   notes: UserNote[];
   onEditNote: (note: UserNote) => void;
@@ -43,6 +46,9 @@ export function AdminPortal({
   securityLogs,
   isHealing,
   onRunHealing,
+  incidents,
+  onApproveIncident,
+  deploymentStatus,
   totalNotesCount,
   notes,
   onEditNote,
@@ -568,6 +574,9 @@ export function AdminPortal({
           logs={securityLogs}
           isHealing={isHealing}
           onRunHealing={onRunHealing}
+          incidents={incidents}
+          onApproveIncident={onApproveIncident}
+          deploymentStatus={deploymentStatus}
         />
       </div>
     </div>

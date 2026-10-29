@@ -216,6 +216,8 @@ function NotsopediaApp() {
     `[${new Date().toLocaleTimeString()}] [SHIELD] Standard CORS, CSRF, and injection vector validation active.`
   ]);
   const [isHealing, setIsHealing] = useState<boolean>(false);
+  const [autonomousIncidents, setAutonomousIncidents] = useState<any[]>([]);
+  const [deploymentStatus, setDeploymentStatus] = useState<any | null>(null);
 
   // Status Toasts
   const [notesError, setNotesError] = useState<string>("");
@@ -854,52 +856,119 @@ function NotsopediaApp() {
     }
   };
 
-  // Autonomous Security & Self-Healing Shield
-  const runAutonomousHealing = () => {
+  // Real Autonomous Engineering & Self-Healing Trigger
+  const runAutonomousHealing = async () => {
     setIsHealing(true);
     setSecurityLogs((prev) => [
       ...prev,
-      `[${new Date().toLocaleTimeString()}] [SHIELD] Triggering manual autonomous heal scan...`
+      `[${new Date().toLocaleTimeString()}] [AUTONOMOUS] Triggering system audit scan across security, API gateway, and integrity...`
     ]);
 
-    setTimeout(() => {
-      setSecurityLogs((prev) => [
-        ...prev,
-        `[${new Date().toLocaleTimeString()}] [XSS-AUDIT] Running deep-level HTML sanitization checks across notes...`
-      ]);
-    }, 500);
-
-    setTimeout(() => {
-      let sanitizedCount = 0;
-      userNotes.forEach((note) => {
-        if (note.content && (note.content.includes("<script>") || note.content.includes("javascript:"))) {
-          sanitizedCount++;
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (currentAuthToken) {
+        headers["Authorization"] = `Bearer ${currentAuthToken}`;
+      } else {
+        const { data: { session } } = await supabase?.auth.getSession() || { data: { session: null } };
+        if (session?.access_token) {
+          headers["Authorization"] = `Bearer ${session.access_token}`;
         }
+      }
+
+      // 1. Trigger backend scan
+      const scanRes = await fetch("/api/admin/autonomous/scan", {
+        method: "POST",
+        headers
       });
-      setSecurityLogs((prev) => [
-        ...prev,
-        `[${new Date().toLocaleTimeString()}] [XSS-AUDIT] Scanned ${userNotes.length} notes. Sanitized ${sanitizedCount} injection elements.`,
-        `[${new Date().toLocaleTimeString()}] [RULES-SYNC] Verifying Firestore and Supabase security alignment...`
-      ]);
-    }, 1000);
 
-    setTimeout(() => {
-      setSecurityLogs((prev) => [
-        ...prev,
-        `[${new Date().toLocaleTimeString()}] [RULES-SYNC] Security definitions verified (100% compliant).`,
-        `[${new Date().toLocaleTimeString()}] [INTEGRITY] Conducting reference check for orphaned study cards...`
-      ]);
-    }, 1500);
+      if (!scanRes.ok) {
+        throw new Error(`Audit scan failed with HTTP ${scanRes.status}`);
+      }
 
-    setTimeout(() => {
+      const scanData = await scanRes.json();
+      const discoveredCount = scanData.summary?.active || 0;
+
       setSecurityLogs((prev) => [
         ...prev,
-        `[${new Date().toLocaleTimeString()}] [INTEGRITY] Reference check complete. All study cards verified.`,
-        `[${new Date().toLocaleTimeString()}] [SHIELD] SYSTEM SECURITY REPORT: 100% HEALTHY. ALL ISSUES RESOLVED AUTOMATICALLY.`
+        `[${new Date().toLocaleTimeString()}] [AUDIT-RESULT] Discovered ${discoveredCount} active issues (${scanData.summary?.critical || 0} high/critical).`,
+        `[${new Date().toLocaleTimeString()}] [REPAIR-ENGINE] Executing authorized low-risk auto-remediations...`
       ]);
+
+      // 2. Execute low-risk repairs
+      const repairRes = await fetch("/api/admin/autonomous/repair", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ allLowRisk: true })
+      });
+
+      let repairedCount = 0;
+      if (repairRes.ok) {
+        const repairData = await repairRes.json();
+        repairedCount = repairData.verifiedCount || 0;
+        setSecurityLogs((prev) => [
+          ...prev,
+          `[${new Date().toLocaleTimeString()}] [REPAIR-VERIFIED] Deterministically repaired and verified ${repairedCount} issues.`
+        ]);
+      }
+
+      // 3. Inspect deployment sync
+      const deployRes = await fetch("/api/admin/autonomous/deployment-status", { headers });
+      if (deployRes.ok) {
+        const deployData = await deployRes.json();
+        setDeploymentStatus(deployData);
+        setSecurityLogs((prev) => [
+          ...prev,
+          `[${new Date().toLocaleTimeString()}] [DEPLOY-SYNC] Git status: ${deployData.inSync ? "In Sync with origin/main" : "Tracking Remote"}. Vercel probe: ${deployData.productionHealth?.status || "OK"}.`
+        ]);
+      }
+
+      // 4. Fetch updated status & incidents
+      const statusRes = await fetch("/api/admin/autonomous/status", { headers });
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        setAutonomousIncidents(statusData.incidents || []);
+        if (statusData.logs?.length) {
+          const formattedLogs = statusData.logs.slice(0, 20).map((l: any) => `[${new Date(l.timestamp).toLocaleTimeString()}] [${l.level.toUpperCase()}] ${l.message}`);
+          setSecurityLogs((prev) => [...prev, ...formattedLogs]);
+        }
+      }
+
+      fetchNotes();
+
+      const remainingActive = (scanData.summary?.active || 0) - repairedCount;
+      if (remainingActive > 0) {
+        showToast(`Audit complete: ${repairedCount} repaired. ${remainingActive} incident(s) require manual approval.`, "info");
+      } else {
+        showToast("System audit & self-healing verified 100% compliant!", "success");
+      }
+    } catch (err: any) {
+      setSecurityLogs((prev) => [
+        ...prev,
+        `[${new Date().toLocaleTimeString()}] [ERROR] Autonomous healing failure: ${err.message}`
+      ]);
+      showToast(`Audit failed: ${err.message}`, "error");
+    } finally {
       setIsHealing(false);
-      showToast("Shield & Self-Healing audit completed! System 100% healthy.", "success");
-    }, 2000);
+    }
+  };
+
+  const handleApproveIncident = async (incidentId: string) => {
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (currentAuthToken) headers["Authorization"] = `Bearer ${currentAuthToken}`;
+
+      const res = await fetch("/api/admin/autonomous/approve", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ incidentId })
+      });
+      if (res.ok) {
+        showToast("Incident approved for repair.", "success");
+        runAutonomousHealing();
+      }
+    } catch (err: any) {
+      showToast(`Approval failed: ${err.message}`, "error");
+    }
   };
 
   // PowerPoint Generator

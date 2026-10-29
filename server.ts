@@ -3,6 +3,7 @@ import path from "path";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
+import { globalAutonomousEngine, sanitizeDangerousHtml, redactSensitiveData } from "./server/autonomousEngine.ts";
 
 // Load environment variables
 dotenv.config({ path: ".env.local" });
@@ -2532,6 +2533,198 @@ app.get("/api/mind-ai/admin/overview", async (req, res) => {
   }
 });
 
+// Helper for verifying admin session
+async function verifyAdminUser(req: express.Request): Promise<{ user: any; error?: string; status?: number }> {
+  const requestSupabase = createRequestSupabase(req);
+  if (!requestSupabase) {
+    return { user: null, error: "Authentication is required.", status: 401 };
+  }
+  const { data: { user }, error: userError } = await requestSupabase.auth.getUser();
+  if (userError || !user) {
+    return { user: null, error: "Authentication is required.", status: 401 };
+  }
+
+  const adminEmails = (process.env.ADMIN_EMAILS || "chetanaagle2007@gmail.com").split(",").map(e => e.trim().toLowerCase());
+  const isEmailAdmin = adminEmails.includes((user.email || "").toLowerCase()) || user.user_metadata?.isAdmin === true;
+  if (isEmailAdmin) {
+    return { user };
+  }
+
+  try {
+    const { data: adminProfile } = await requestSupabase
+      .from("users")
+      .select("is_admin")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (adminProfile?.is_admin) {
+      return { user };
+    }
+  } catch {}
+
+  return { user: null, error: "Administrator privileges are required.", status: 403 };
+}
+
+// ========================================================
+// 12i. AUTONOMOUS ENGINEERING, REPAIR & RECOVERY ENDPOINTS
+// ========================================================
+
+// 1. Client-side runtime telemetry ingestion (public / rate-limited)
+app.post("/api/admin/autonomous/telemetry", (req, res) => {
+  try {
+    const { message, stack, component, url } = req.body || {};
+    if (!message) {
+      return res.status(400).json({ error: "Telemetry message is required." });
+    }
+    const incident = globalAutonomousEngine.recordFrontendTelemetry({
+      message: String(message),
+      stack: stack ? String(stack) : undefined,
+      component: component ? String(component) : undefined,
+      url: url ? String(url) : undefined
+    });
+    return res.json({ success: true, incidentId: incident.id, status: incident.status });
+  } catch (err: any) {
+    return res.status(500).json({ error: `Telemetry ingestion error: ${err.message}` });
+  }
+});
+
+// 2. Autonomous system status and incident list (Admin only)
+app.get("/api/admin/autonomous/status", async (req, res) => {
+  try {
+    const auth = await verifyAdminUser(req);
+    if (!auth.user) {
+      return res.status(auth.status || 401).json({ error: auth.error });
+    }
+
+    const incidents = globalAutonomousEngine.getIncidents();
+    const logs = globalAutonomousEngine.getLogs(60);
+    const summary = {
+      total: incidents.length,
+      active: incidents.filter(i => i.status !== "VERIFIED" && i.status !== "FAILED").length,
+      verified: incidents.filter(i => i.status === "VERIFIED").length,
+      awaitingApproval: incidents.filter(i => i.status === "AWAITING_APPROVAL").length,
+      critical: incidents.filter(i => (i.severity === "critical" || i.severity === "high") && i.status !== "VERIFIED").length
+    };
+
+    return res.json({ summary, incidents, logs });
+  } catch (err: any) {
+    return res.status(500).json({ error: `Autonomous status error: ${err.message}` });
+  }
+});
+
+// 3. Trigger full system audit scan (Admin only)
+app.post("/api/admin/autonomous/scan", async (req, res) => {
+  try {
+    const auth = await verifyAdminUser(req);
+    if (!auth.user) {
+      return res.status(auth.status || 401).json({ error: auth.error });
+    }
+
+    const currentNotes = readNotesFromFile();
+    const result = await globalAutonomousEngine.runFullSystemScan({
+      notes: currentNotes,
+      mindAiUrl: MIND_AI_SERVICE_URL
+    });
+
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ error: `Autonomous scan error: ${err.message}` });
+  }
+});
+
+// 4. Execute authorized repair (Admin only)
+app.post("/api/admin/autonomous/repair", async (req, res) => {
+  try {
+    const auth = await verifyAdminUser(req);
+    if (!auth.user) {
+      return res.status(auth.status || 401).json({ error: auth.error });
+    }
+
+    const { incidentId, allLowRisk } = req.body || {};
+    const currentNotes = readNotesFromFile();
+
+    const updateNotesFn = (updated: any[]) => {
+      writeNotesToFile(updated);
+    };
+
+    if (allLowRisk) {
+      const result = await globalAutonomousEngine.executeAllLowRiskRepairs(auth.user, {
+        notes: currentNotes,
+        updateNotes: updateNotesFn
+      });
+      return res.json({ success: true, ...result });
+    }
+
+    if (!incidentId) {
+      return res.status(400).json({ error: "Missing incidentId or allLowRisk flag." });
+    }
+
+    const result = await globalAutonomousEngine.executeRepair(incidentId, auth.user, {
+      notes: currentNotes,
+      updateNotes: updateNotesFn
+    });
+
+    return res.json({ success: result.verified, ...result });
+  } catch (err: any) {
+    return res.status(500).json({ error: `Autonomous repair error: ${err.message}` });
+  }
+});
+
+// 5. Approve incident repair plan (Admin only)
+app.post("/api/admin/autonomous/approve", async (req, res) => {
+  try {
+    const auth = await verifyAdminUser(req);
+    if (!auth.user) {
+      return res.status(auth.status || 401).json({ error: auth.error });
+    }
+
+    const { incidentId } = req.body || {};
+    if (!incidentId) {
+      return res.status(400).json({ error: "Missing incidentId to approve." });
+    }
+
+    const updated = globalAutonomousEngine.approveIncident(incidentId, auth.user);
+    return res.json({ success: true, incident: updated });
+  } catch (err: any) {
+    return res.status(500).json({ error: `Autonomous approval error: ${err.message}` });
+  }
+});
+
+// 6. Inspect deployment synchronization & Vercel production health (Admin only)
+app.get("/api/admin/autonomous/deployment-status", async (req, res) => {
+  try {
+    const auth = await verifyAdminUser(req);
+    if (!auth.user) {
+      return res.status(auth.status || 401).json({ error: auth.error });
+    }
+
+    const deployment = await globalAutonomousEngine.checkDeploymentStatus();
+    return res.json(deployment);
+  } catch (err: any) {
+    return res.status(500).json({ error: `Deployment status error: ${err.message}` });
+  }
+});
+
+// 7. Trigger daily autonomous maintenance cycle (Admin only)
+app.post("/api/admin/autonomous/daily-maintenance", async (req, res) => {
+  try {
+    const auth = await verifyAdminUser(req);
+    if (!auth.user) {
+      return res.status(auth.status || 401).json({ error: auth.error });
+    }
+
+    const currentNotes = readNotesFromFile();
+    const result = await globalAutonomousEngine.runDailyMaintenanceCycle({
+      notes: currentNotes,
+      updateNotes: (updated) => writeNotesToFile(updated)
+    });
+
+    return res.json({ success: true, ...result });
+  } catch (err: any) {
+    return res.status(500).json({ error: `Daily maintenance error: ${err.message}` });
+  }
+});
+
 // 13. DEDICATED EMAIL STUDIO PROXIES
 app.post("/api/mind-ai/email/generate-subject", async (req, res) => {
   try {
@@ -2917,7 +3110,10 @@ export {
   sanitizeAndDeduplicateFlashcards,
   parseQuizJson,
   sanitizeAndValidateQuiz,
-  generateQuizFromNote
+  generateQuizFromNote,
+  globalAutonomousEngine,
+  sanitizeDangerousHtml,
+  redactSensitiveData
 };
 export default app;
 
