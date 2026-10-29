@@ -2041,7 +2041,10 @@ app.post("/api/ai/ask", async (req, res) => {
       if (isTimeout) {
         console.warn(`[MIND-AI GATEWAY] MIND-AI request timed out after ${MIND_AI_TIMEOUT_MS}ms. Falling back to Gemini.`);
       } else {
-        console.warn(`[MIND-AI GATEWAY] MIND-AI connection error (${err.message || err}). Falling back to Gemini.`);
+        const safeErrMsg = String(err?.message || err)
+          .replace(/Bearer\s+[A-Za-z0-9_\-\.]+/gi, "Bearer [REDACTED]")
+          .replace(/key=[A-Za-z0-9_\-]+/gi, "key=[REDACTED]");
+        console.warn(`[MIND-AI GATEWAY] MIND-AI connection error (${safeErrMsg}). Falling back to Gemini.`);
       }
     }
 
@@ -2050,8 +2053,9 @@ app.post("/api/ai/ask", async (req, res) => {
         text: mindAiData.response,
         sources,
         mode: mindAiData.mode || mode,
-        model: mindAiData.model,
-        provider: mindAiData.provider
+        model: typeof mindAiData.model === "string" && mindAiData.model ? mindAiData.model : undefined,
+        provider: typeof mindAiData.provider === "string" && mindAiData.provider ? mindAiData.provider : undefined,
+        ...(mindAiData.execution_mode ? { execution_mode: String(mindAiData.execution_mode) } : {})
       });
     }
 
@@ -2067,7 +2071,10 @@ app.post("/api/ai/ask", async (req, res) => {
     });
 
   } catch (error: any) {
-    console.error("Standalone AI engine error:", error);
+    const safeError = String(error?.message || error)
+      .replace(/Bearer\s+[A-Za-z0-9_\-\.]+/gi, "Bearer [REDACTED]")
+      .replace(/key=[A-Za-z0-9_\-]+/gi, "key=[REDACTED]");
+    console.error("Standalone AI engine error:", safeError);
     // Distinguish a missing-key configuration error from a genuine runtime error.
     // This gives the site owner a clear diagnostic and the user an understandable message.
     if (error?.message?.includes("GEMINI_API_KEY is not configured")) {

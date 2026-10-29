@@ -549,6 +549,75 @@ await test("16. Gemini fallback response includes model='gemini-2.5-flash' and p
   mindAiStatusCode = 200;
 });
 
+// 17. Upstream execution_mode propagation
+await test("17. Upstream execution_mode is transparently propagated when returned by MIND-AI", async () => {
+  mindAiStatusCode = 200;
+  mindAiResponseBody = {
+    response: "BFS traversal visits nodes level by level.",
+    mode: "notes-expert",
+    should_speak: false,
+    model: "mind-ai-planner-v1",
+    provider: "mind_ai",
+    execution_mode: "rule_based_heuristic",
+    sources: []
+  };
+
+  const res = await postAsk(
+    { question: "Explain BFS", mode: "notes-expert" },
+    { Authorization: "Bearer valid-jwt-token" }
+  );
+
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.execution_mode, "rule_based_heuristic");
+  assert.strictEqual(res.body.provider, "mind_ai");
+  assert.strictEqual(res.body.model, "mind-ai-planner-v1");
+  mindAiResponseBody = null;
+});
+
+// 18. Missing upstream metadata is not invented
+await test("18. Missing upstream model/provider is omitted without inventing false metadata", async () => {
+  mindAiStatusCode = 200;
+  mindAiResponseBody = {
+    response: "A response from an upstream provider with no metadata fields.",
+    mode: "notes-expert",
+    should_speak: false,
+    sources: []
+  };
+
+  const res = await postAsk(
+    { question: "Simple question", mode: "notes-expert" },
+    { Authorization: "Bearer valid-jwt-token" }
+  );
+
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.model, undefined);
+  assert.strictEqual(res.body.provider, undefined);
+  assert.strictEqual(res.body.execution_mode, undefined);
+  mindAiResponseBody = null;
+});
+
+// 19. Gateway log confidentiality audit: no secrets or student tokens leaked
+await test("19. Gateway never leaks service keys, authorization bearer tokens, or note bodies into response", async () => {
+  mindAiStatusCode = 200;
+  mindAiResponseBody = {
+    response: "Confidentiality verified.",
+    mode: "notes-expert",
+    should_speak: false,
+    sources: []
+  };
+
+  const res = await postAsk(
+    { question: "Test secret isolation", mode: "notes-expert" },
+    { Authorization: "Bearer valid-jwt-token" }
+  );
+
+  const rawJson = JSON.stringify(res.body);
+  assert(!rawJson.includes(TEST_SERVICE_KEY), "Service key must never leak into response");
+  assert(!rawJson.includes("valid-jwt-token"), "Bearer token must never leak into response");
+  assert(!rawJson.includes("internal-mind-ai-secret"), "Service key pattern must not leak");
+  mindAiResponseBody = null;
+});
+
 // Cleanup servers
 appServer.close();
 mockMindAiServer.close();
