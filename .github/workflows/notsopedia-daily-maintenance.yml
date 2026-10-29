@@ -1,0 +1,130 @@
+name: Notsopedia Autonomous Daily Maintenance
+
+on:
+  schedule:
+    # Runs daily at 21:00 UTC (02:30 AM IST next morning)
+    # Cron format: minute hour day-of-month month day-of-week
+    # 21:00 UTC = 02:30 AM IST (India Standard Time, UTC + 05:30)
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target Notsopedia Base URL'
+        required: false
+        default: 'https://notsopedia.vercel.app'
+      force:
+        description: 'Force execution even if a cycle ran recently'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: notsopedia-daily-maintenance
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  maintenance:
+    name: Execute Autonomous Maintenance Cycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Validate Configuration & Secrets
+        id: check-secrets
+        run: |
+          if [ -z "${{ secrets.AUTONOMOUS_MAINTENANCE_KEY }}" ]; then
+            echo "::error::Secret AUTONOMOUS_MAINTENANCE_KEY is not configured in repository secrets."
+            echo "Please configure AUTONOMOUS_MAINTENANCE_KEY in GitHub Repository Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+          echo "Secret AUTONOMOUS_MAINTENANCE_KEY is present."
+
+      - name: Run Scheduled Autonomous Maintenance
+        id: run-maintenance
+        env:
+          MAINTENANCE_KEY: ${{ secrets.AUTONOMOUS_MAINTENANCE_KEY }}
+          TARGET_URL: ${{ inputs.target_url || 'https://notsopedia.vercel.app' }}
+          FORCE_FLAG: ${{ inputs.force || false }}
+        run: |
+          TARGET="${TARGET_URL%/}"
+          ENDPOINT="${TARGET}/api/admin/autonomous/daily-maintenance"
+          echo "Executing autonomous maintenance at ${ENDPOINT}..."
+
+          RESPONSE_FILE=$(mktemp)
+          HTTP_STATUS=$(curl -s -w "%{http_code}" -o "$RESPONSE_FILE" \
+            -X POST "$ENDPOINT" \
+            -H "Content-Type: application/json" \
+            -H "X-Autonomous-Maintenance-Key: ${MAINTENANCE_KEY}" \
+            -d "{\"force\": ${FORCE_FLAG}}" \
+            --connect-timeout 15 \
+            --max-time 120 \
+            --retry 2 \
+            --retry-delay 5 \
+            --retry-connrefused)
+
+          echo "HTTP Response Status: ${HTTP_STATUS}"
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "::error::Maintenance endpoint returned HTTP ${HTTP_STATUS}"
+            cat "$RESPONSE_FILE"
+            echo ""
+            exit 1
+          fi
+
+          python3 -c "
+          import json, sys, os
+
+          with open('$RESPONSE_FILE', 'r') as f:
+              raw = f.read()
+
+          try:
+              data = json.loads(raw)
+          except Exception as e:
+              print(f'::error::Failed to parse maintenance response as JSON: {e}')
+              sys.exit(1)
+
+          if not data.get('success'):
+              err = data.get('error', 'Unknown failure')
+              print(f'::error::Maintenance reported unsuccessful: {err}')
+              sys.exit(1)
+
+          report = data.get('report', {})
+          status = report.get('status', 'UNKNOWN')
+          run_id = report.get('runId', 'N/A')
+          metrics = report.get('metrics', {})
+          deploy = report.get('deploymentHealth', {})
+
+          print(f'Maintenance Run ID: {run_id}')
+          print(f'Lifecycle Status: {status}')
+          print(f'Duration: {report.get(\"durationMs\", 0)} ms')
+          print(f'Message: {report.get(\"message\", \"N/A\")}')
+
+          summary_path = os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary_path:
+              with open(summary_path, 'a') as s:
+                  s.write('# 🛡️ Notsopedia Scheduled Maintenance Report\n\n')
+                  s.write(f'- **Run ID:** \`{run_id}\`\n')
+                  s.write(f'- **Lifecycle Status:** **{status}**\n')
+                  s.write(f'- **Execution Duration:** {report.get(\"durationMs\", 0)} ms\n')
+                  s.write(f'- **Summary:** {report.get(\"message\", \"N/A\")}\n\n')
+                  s.write('### 📊 Diagnostic & Repair Metrics\n\n')
+                  s.write('| Metric | Count |\n|---|---|\n')
+                  s.write(f'| Total Incidents Scanned | {metrics.get(\"totalIncidentsScanned\", 0)} |\n')
+                  s.write(f'| Active Incidents Before | {metrics.get(\"activeIncidentsBefore\", 0)} |\n')
+                  s.write(f'| Active Incidents After | {metrics.get(\"activeIncidentsAfter\", 0)} |\n')
+                  s.write(f'| Low-Risk Repairs Attempted | {metrics.get(\"lowRiskRepairsAttempted\", 0)} |\n')
+                  s.write(f'| Low-Risk Repairs Verified | {metrics.get(\"lowRiskRepairsVerified\", 0)} |\n')
+                  s.write(f'| Low-Risk Repairs Failed | {metrics.get(\"lowRiskRepairsFailed\", 0)} |\n')
+                  s.write(f'| High-Risk Actions Awaiting Approval | {metrics.get(\"highRiskAwaitingApproval\", 0)} |\n\n')
+                  s.write('### 🚀 Deployment & Health State\n\n')
+                  s.write(f'- **Git Sync:** \`{deploy.get(\"deploymentStatus\", \"UNKNOWN\")}\` (In Sync: {deploy.get(\"inSync\", False)})\n')
+                  s.write(f'- **Production Probe:** {deploy.get(\"productionHealth\", {}).get(\"status\", \"UNKNOWN\")}\n')
+                  s.write(f'- **Manual Intervention Required:** {report.get(\"manualInterventionRequired\", False)}\n')
+
+          if status == 'FAILED':
+              print('::error::Maintenance cycle ended in FAILED status')
+              sys.exit(1)
+          "

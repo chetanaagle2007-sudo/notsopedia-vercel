@@ -30,6 +30,7 @@ interface StudentDashboardProps {
   onOpenCollections: () => void;
   onNavigateToExplorer: () => void;
   onOpenAIWorkspace?: (note?: UserNote) => void;
+  onQuickAskAI?: (prompt: string) => void;
 }
 
 export function StudentDashboard({
@@ -43,8 +44,10 @@ export function StudentDashboard({
   onOpenFlashcardsForNote,
   onOpenCollections,
   onNavigateToExplorer,
-  onOpenAIWorkspace
+  onOpenAIWorkspace,
+  onQuickAskAI
 }: StudentDashboardProps) {
+  const [quickPrompt, setQuickPrompt] = React.useState("");
   // Load real quiz history from localStorage
   const quizHistory: QuizAttemptResult[] = useMemo(() => {
     try {
@@ -160,6 +163,45 @@ export function StudentDashboard({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Quick AI Study Assistant Composer Card */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-indigo-900/40 via-slate-900 to-indigo-950/40 border border-indigo-500/30 shadow-xs relative overflow-hidden">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center space-x-2 text-indigo-400 font-semibold text-xs">
+            <Sparkles className="h-4 w-4" />
+            <span>AI Study Assistant • Instant Academic Answers</span>
+          </div>
+          <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">MIND-AI & Gemini Powered</span>
+        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const val = quickPrompt.trim();
+            if (!val) return;
+            if (onQuickAskAI) {
+              onQuickAskAI(val);
+            } else {
+              onOpenAITutor();
+            }
+          }}
+          className="flex flex-col sm:flex-row gap-2 mt-2"
+        >
+          <input
+            type="text"
+            value={quickPrompt}
+            onChange={(e) => setQuickPrompt(e.target.value)}
+            placeholder="Ask any question: 'Explain BFS vs DFS', 'Thermodynamics Carnot Cycle', or syllabus topics..."
+            className="flex-1 px-4 py-2.5 rounded-2xl bg-slate-950/80 border border-slate-700/80 text-xs sm:text-sm text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 transition"
+          />
+          <button
+            type="submit"
+            className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center justify-center space-x-1.5 transition shrink-0 shadow-xs"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            <span>Ask AI</span>
+          </button>
+        </form>
       </div>
 
       {/* Real Study Metrics Grid */}

@@ -1,6 +1,6 @@
-// Notsopedia PWA Service Worker — v2
+// Notsopedia PWA Service Worker — v3
 // Automatically versioned during production build, with manual fallback
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const CACHE_NAME = `notsopedia-${CACHE_VERSION}`;
 
 const APP_SHELL = [
@@ -13,11 +13,8 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
   );
-  // If first install (no active controller), activate immediately.
-  // Otherwise, wait for user confirmation via postMessage({ type: 'SKIP_WAITING' }).
-  if (!self.registration.active) {
-    self.skipWaiting();
-  }
+  // Activate immediately so new assets are picked up right away
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {

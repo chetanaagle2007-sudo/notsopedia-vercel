@@ -12,6 +12,10 @@ server.ts.backup-ai
 src/*.backup*
 system_config.json
 user_notes.json
+autonomous_incidents.json
+agent_memory.db
+artifacts/
+workspace/
 .vercel
 
 uploads/

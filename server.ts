@@ -3,6 +3,7 @@ import path from "path";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
+import crypto from "crypto";
 import { globalAutonomousEngine, sanitizeDangerousHtml, redactSensitiveData } from "./server/autonomousEngine.ts";
 
 // Load environment variables
@@ -2533,8 +2534,51 @@ app.get("/api/mind-ai/admin/overview", async (req, res) => {
   }
 });
 
-// Helper for verifying admin session
+// Timing-safe string comparison to prevent side-channel timing attacks
+function safeCompare(a: string, b: string): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) {
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// Helper for verifying admin session or authorized M2M maintenance key
 async function verifyAdminUser(req: express.Request): Promise<{ user: any; error?: string; status?: number }> {
+  // 1. M2M Autonomous Maintenance Key check (for GitHub Actions & Scheduled Daemons)
+  const serverM2mKey = process.env.AUTONOMOUS_MAINTENANCE_KEY || "";
+  if (serverM2mKey && serverM2mKey.length >= 16) {
+    const m2mHeader = (req.headers["x-autonomous-maintenance-key"] || "") as string;
+    if (m2mHeader && safeCompare(m2mHeader, serverM2mKey)) {
+      return {
+        user: {
+          id: "m2m-autonomous-scheduler",
+          email: "scheduler@notsopedia.local",
+          role: "AutonomousScheduler",
+          is_admin: true,
+          is_m2m: true
+        }
+      };
+    }
+
+    const authHeader = (req.headers["authorization"] || "") as string;
+    if (authHeader.startsWith("Bearer ") && safeCompare(authHeader.slice(7).trim(), serverM2mKey)) {
+      return {
+        user: {
+          id: "m2m-autonomous-scheduler",
+          email: "scheduler@notsopedia.local",
+          role: "AutonomousScheduler",
+          is_admin: true,
+          is_m2m: true
+        }
+      };
+    }
+  }
+
+  // 2. Interactive Supabase user session check (for human admins in Admin Portal)
   const requestSupabase = createRequestSupabase(req);
   if (!requestSupabase) {
     return { user: null, error: "Authentication is required.", status: 401 };
@@ -2716,12 +2760,23 @@ app.post("/api/admin/autonomous/daily-maintenance", async (req, res) => {
     const currentNotes = readNotesFromFile();
     const result = await globalAutonomousEngine.runDailyMaintenanceCycle({
       notes: currentNotes,
-      updateNotes: (updated) => writeNotesToFile(updated)
+      updateNotes: (updated) => writeNotesToFile(updated),
+      force: req.body?.force === true
     });
 
-    return res.json({ success: true, ...result });
+    return res.status(result.success ? 200 : 500).json({
+      success: result.success,
+      report: result.report,
+      summary: result.report.metrics,
+      timestamp: result.report.endTime,
+      deployment: result.report.deploymentHealth,
+      pendingApprovals: result.report.pendingApprovals
+    });
   } catch (err: any) {
-    return res.status(500).json({ error: `Daily maintenance error: ${err.message}` });
+    return res.status(500).json({
+      success: false,
+      error: `Daily maintenance error: ${err.message}`
+    });
   }
 });
 

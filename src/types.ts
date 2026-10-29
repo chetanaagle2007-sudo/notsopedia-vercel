@@ -111,6 +111,9 @@ export interface AIChatMessage {
   text: string;
   sources?: Array<{ title: string; uri: string }>;
   timestamp: string;
+  provider?: string;
+  model?: string;
+  executionMode?: string;
 }
 
 export interface Flashcard {

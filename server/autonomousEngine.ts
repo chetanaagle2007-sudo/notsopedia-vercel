@@ -8,6 +8,7 @@
 
 import { execSync } from "child_process";
 import fs from "fs";
+import os from "os";
 import path from "path";
 
 export type IncidentSeverity = "low" | "medium" | "high" | "critical";
@@ -75,6 +76,39 @@ export interface EngineLogEntry {
   timestamp: string;
   level: "info" | "warn" | "error" | "action";
   message: string;
+}
+
+export interface MaintenanceCycleReport {
+  runId: string;
+  startTime: string;
+  endTime: string;
+  durationMs: number;
+  status: "SUCCESS" | "PARTIAL_SUCCESS" | "AWAITING_APPROVAL" | "FAILED";
+  message: string;
+  metrics: {
+    totalIncidentsScanned: number;
+    activeIncidentsBefore: number;
+    activeIncidentsAfter: number;
+    severityBreakdown: {
+      critical: number;
+      high: number;
+      medium: number;
+      low: number;
+    };
+    lowRiskRepairsAttempted: number;
+    lowRiskRepairsVerified: number;
+    lowRiskRepairsFailed: number;
+    highRiskAwaitingApproval: number;
+  };
+  pendingApprovals: Array<{ id: string; title: string; category: string; severity: string }>;
+  deploymentHealth: {
+    localCommit: string;
+    remoteCommit: string;
+    inSync: boolean;
+    deploymentStatus: string;
+    productionHealth: { status: string; code?: number; verified: boolean };
+  };
+  manualInterventionRequired: boolean;
 }
 
 /**
@@ -176,14 +210,54 @@ export function sanitizeDangerousHtml(content: string): {
   return { sanitized: text, modificationsCount, vectorsFound };
 }
 
+const INCIDENTS_FILE_PATH = process.env.VERCEL
+  ? path.join(os.tmpdir(), "autonomous_incidents.json")
+  : path.join(process.cwd(), "autonomous_incidents.json");
+
 export class AutonomousEngine {
   private incidents: Map<string, IncidentRecord> = new Map();
   private systemLogs: EngineLogEntry[] = [];
   private readonly maxLogs: number = 200;
   private readonly maxIncidents: number = 100;
+  private isMaintenanceRunning: boolean = false;
 
   constructor() {
+    this.loadStateFromDisk();
     this.recordLog("Autonomous Engineering Engine initialized with continuous lifecycle monitoring.", "info");
+  }
+
+  public loadStateFromDisk(): void {
+    try {
+      if (fs.existsSync(INCIDENTS_FILE_PATH)) {
+        const raw = fs.readFileSync(INCIDENTS_FILE_PATH, "utf8");
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed.incidents)) {
+          for (const inc of parsed.incidents) {
+            if (inc && inc.id) {
+              this.incidents.set(inc.id, inc);
+            }
+          }
+        }
+        if (Array.isArray(parsed.logs)) {
+          this.systemLogs = parsed.logs.slice(0, this.maxLogs);
+        }
+      }
+    } catch {
+      // In-memory fallback if file system is read-only or empty
+    }
+  }
+
+  public saveStateToDisk(): void {
+    try {
+      const data = {
+        incidents: Array.from(this.incidents.values()),
+        logs: this.systemLogs.slice(0, 100),
+        lastSaved: new Date().toISOString()
+      };
+      fs.writeFileSync(INCIDENTS_FILE_PATH, JSON.stringify(data, null, 2), "utf8");
+    } catch {
+      // Silent pass in constrained environments
+    }
   }
 
   public recordLog(message: string, level: "info" | "warn" | "error" | "action" = "info"): void {
@@ -261,6 +335,7 @@ export class AutonomousEngine {
       if (oldestKey) this.incidents.delete(oldestKey);
     }
 
+    this.saveStateToDisk();
     return incident;
   }
 
@@ -560,6 +635,7 @@ export class AutonomousEngine {
     });
 
     this.recordLog(`Incident ${incidentId} approved for repair by ${incident.approvedBy}.`, "action");
+    this.saveStateToDisk();
     return incident;
   }
 
@@ -755,42 +831,106 @@ export class AutonomousEngine {
   }
 
   /**
-   * Daily autonomous maintenance cycle.
+   * Daily autonomous maintenance cycle with idempotency, concurrency guard, and comprehensive reporting.
    */
   public async runDailyMaintenanceCycle(options?: {
     notes?: any[];
     updateNotes?: (notes: any[]) => void;
+    force?: boolean;
   }): Promise<{
-    summary: { scannedIncidents: number; repaired: number; deploymentHealth: any };
-    timestamp: string;
+    success: boolean;
+    report: MaintenanceCycleReport;
   }> {
-    this.recordLog("Executing scheduled daily autonomous self-development & maintenance cycle...", "action");
+    if (this.isMaintenanceRunning && !options?.force) {
+      throw new Error("A maintenance cycle is currently in progress. Concurrent execution rejected.");
+    }
 
-    // 1. Scan everything
-    const scanResult = await this.runFullSystemScan({ notes: options?.notes });
+    this.isMaintenanceRunning = true;
+    const startTime = new Date();
+    const runId = `maint-${startTime.toISOString().slice(0, 10)}-${Math.random().toString(36).slice(2, 8)}`;
 
-    // 2. Repair all low-risk items
-    const repairResult = await this.executeAllLowRiskRepairs(
-      { email: "autonomous-scheduler@system.local", id: "daemon" },
-      options
-    );
+    this.recordLog(`[${runId}] Executing scheduled autonomous daily maintenance cycle...`, "action");
 
-    // 3. Inspect deployment sync
-    const deployment = await this.checkDeploymentStatus();
+    try {
+      // 1. Scan everything across domains
+      const scanResult = await this.runFullSystemScan({ notes: options?.notes });
+      const activeBefore = this.getIncidents().filter((i) => i.status !== "VERIFIED" && i.status !== "FAILED");
 
-    this.recordLog(
-      `Daily autonomous maintenance completed: ${repairResult.verifiedCount} verified repairs. Deployment status: ${deployment.deploymentStatus}.`,
-      "info"
-    );
+      // Categorize severity
+      const severityBreakdown = {
+        critical: activeBefore.filter((i) => i.severity === "critical").length,
+        high: activeBefore.filter((i) => i.severity === "high").length,
+        medium: activeBefore.filter((i) => i.severity === "medium").length,
+        low: activeBefore.filter((i) => i.severity === "low").length
+      };
 
-    return {
-      summary: {
-        scannedIncidents: scanResult.summary.total,
-        repaired: repairResult.verifiedCount,
-        deploymentHealth: deployment
-      },
-      timestamp: new Date().toISOString()
-    };
+      // 2. Execute low-risk repairs
+      const repairResult = await this.executeAllLowRiskRepairs(
+        { email: "autonomous-scheduler@system.local", id: "daemon" },
+        options
+      );
+
+      // 3. Inspect deployment sync
+      const deployment = await this.checkDeploymentStatus();
+
+      // 4. Evaluate remaining state
+      const activeAfter = this.getIncidents().filter((i) => i.status !== "VERIFIED" && i.status !== "FAILED");
+      const pendingApprovals = activeAfter
+        .filter((i) => i.status === "AWAITING_APPROVAL" || i.riskLevel === "high_approval_required")
+        .map((i) => ({ id: i.id, title: i.title, category: i.category, severity: i.severity }));
+
+      const lowRiskFailed = repairResult.repairedCount - repairResult.verifiedCount;
+
+      let status: "SUCCESS" | "PARTIAL_SUCCESS" | "AWAITING_APPROVAL" | "FAILED" = "SUCCESS";
+      let message = "Scheduled maintenance completed successfully. All active components verified.";
+
+      if (pendingApprovals.length > 0) {
+        status = "AWAITING_APPROVAL";
+        message = `Maintenance completed: ${repairResult.verifiedCount} low-risk issues repaired, but ${pendingApprovals.length} high-risk action(s) require administrator approval.`;
+      } else if (lowRiskFailed > 0) {
+        status = "PARTIAL_SUCCESS";
+        message = `Maintenance completed: ${repairResult.verifiedCount} repairs verified, but ${lowRiskFailed} repair(s) failed verification.`;
+      } else if (activeBefore.length === 0) {
+        message = "Scan completed with 0 issues detected. System 100% compliant.";
+      }
+
+      const endTime = new Date();
+      const report: MaintenanceCycleReport = {
+        runId,
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        durationMs: endTime.getTime() - startTime.getTime(),
+        status,
+        message,
+        metrics: {
+          totalIncidentsScanned: scanResult.summary.total,
+          activeIncidentsBefore: activeBefore.length,
+          activeIncidentsAfter: activeAfter.length,
+          severityBreakdown,
+          lowRiskRepairsAttempted: repairResult.repairedCount,
+          lowRiskRepairsVerified: repairResult.verifiedCount,
+          lowRiskRepairsFailed: lowRiskFailed,
+          highRiskAwaitingApproval: pendingApprovals.length
+        },
+        pendingApprovals,
+        deploymentHealth: deployment,
+        manualInterventionRequired: pendingApprovals.length > 0 || lowRiskFailed > 0 || deployment.deploymentStatus === "DIVERGED"
+      };
+
+      this.recordLog(
+        `[${runId}] Maintenance finished with status ${status}: ${message}`,
+        status === "SUCCESS" ? "info" : "warn"
+      );
+
+      this.saveStateToDisk();
+
+      return {
+        success: status !== "FAILED" as string,
+        report
+      };
+    } finally {
+      this.isMaintenanceRunning = false;
+    }
   }
 }
 

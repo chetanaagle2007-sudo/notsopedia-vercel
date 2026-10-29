@@ -752,11 +752,12 @@ function NotsopediaApp() {
     setMobileMenuOpen(false);
   };
   // AI Knowledge Discovery
-  const handleAskAI = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!aiQuestion.trim()) return;
+  const handleAskAI = async (e?: React.FormEvent, explicitQuestion?: string) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const promptToSend = explicitQuestion || aiQuestion;
+    if (!promptToSend.trim()) return;
 
-    const userMsg = aiQuestion.trim();
+    const userMsg = promptToSend.trim();
     setAiQuestion("");
     setIsAiResponding(true);
 
@@ -806,6 +807,9 @@ function NotsopediaApp() {
             sender: "ai",
             text: data.text,
             sources: data.sources,
+            provider: data.provider,
+            model: data.model,
+            executionMode: data.execution_mode,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
           }
         ]);
@@ -1611,6 +1615,10 @@ ${note.content || "No text content was provided."}
               onOpenCollections={() => setShowCollectionsModal(true)}
               onNavigateToExplorer={() => setActiveTab("explorer")}
               onOpenAIWorkspace={(note) => handleOpenAIWorkspace(note)}
+              onQuickAskAI={(prompt) => {
+                setActiveTab("ai-tutor");
+                handleAskAI(undefined, prompt);
+              }}
             />
           )}
 
@@ -1920,8 +1928,12 @@ ${note.content || "No text content was provided."}
               question={aiQuestion}
               onQuestionChange={setAiQuestion}
               onSubmit={handleAskAI}
+              onStopGeneration={() => setIsAiResponding(false)}
+              onClearChat={() => setAiChatHistory([])}
               notesCount={userNotes.length}
               isAdmin={Boolean(signedInUser && signedInUser.isAdmin)}
+              signedInUser={signedInUser}
+              onOpenAuthModal={() => handleOpenAuthModal(false)}
             />
           )}
 
