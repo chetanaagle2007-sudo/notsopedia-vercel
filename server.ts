@@ -3242,6 +3242,138 @@ app.post("/api/mind-ai/workflows/:id/approve/:stepId", async (req, res) => {
 });
 
 
+
+
+// =============================================================================
+// AI WORKSPACE 2.0 — General-purpose AI Chat Endpoint (separate from AI Tutor)
+// =============================================================================
+app.post("/api/workspace/chat", async (req, res) => {
+  try {
+    const { message, history, project_context } = req.body;
+
+    if (!message || typeof message !== "string" || !message.trim()) {
+      return res.status(400).json({ error: "Message is required." });
+    }
+
+    const requestSupabase = createRequestSupabase(req);
+    if (!requestSupabase) {
+      return res.status(401).json({ error: "Authentication is required to use AI Workspace." });
+    }
+
+    const { data: { user }, error: userError } = await requestSupabase.auth.getUser();
+    if (userError || !user) {
+      return res.status(401).json({ error: "Authentication is required to use AI Workspace." });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({ error: "AI provider is not configured." });
+    }
+
+    // Build validated conversation history
+    const validHistory: Array<{ role: string; content: string }> = [];
+    if (Array.isArray(history)) {
+      for (const turn of history.slice(-20)) {
+        if (
+          turn &&
+          typeof turn === "object" &&
+          (turn.role === "user" || turn.role === "assistant") &&
+          typeof turn.content === "string" &&
+          turn.content.trim()
+        ) {
+          validHistory.push({ role: turn.role, content: turn.content.slice(0, 8000) });
+        }
+      }
+    }
+
+    // System prompt
+    let systemPrompt =
+      "You are a powerful AI assistant integrated into Notsopedia, an AI-powered student learning platform. " +
+      "Help students with studies, coding, document analysis, research, and general knowledge. " +
+      "Format responses clearly using markdown. Use code fences with language tags for code. " +
+      "Never fabricate facts. If you do not know something, say so clearly.";
+
+    if (project_context && typeof project_context === "object") {
+      const projName = String(project_context.name || "").trim().slice(0, 100);
+      const projSysPrompt = String(project_context.system_prompt || "").trim().slice(0, 500);
+      if (projName) {
+        systemPrompt = projSysPrompt ||
+          `You are an expert AI coding assistant helping with the "${projName}" project. ` +
+          "Provide precise, working code with clear explanations.";
+      }
+    }
+
+    // Try MIND-AI first
+    const MIND_AI_WS_URL = (process.env.MIND_AI_SERVICE_URL ||
+      (process.env.VERCEL ? "https://mind-ai-api.onrender.com" : "http://127.0.0.1:8000")
+    ).replace(/\/+$/, "");
+    const MIND_AI_WS_KEY = process.env.MIND_AI_SERVICE_KEY || "";
+    const MIND_AI_TIMEOUT_WS = parseInt(process.env.MIND_AI_TIMEOUT_MS || "10000", 10);
+
+    if (MIND_AI_WS_KEY) {
+      try {
+        const wsCtrl = new AbortController();
+        const wsTimeout = setTimeout(() => wsCtrl.abort(), MIND_AI_TIMEOUT_WS);
+        const mindAiRes = await fetch(`${MIND_AI_WS_URL}/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-MIND-AI-Service-Key": MIND_AI_WS_KEY },
+          body: JSON.stringify({
+            question: message.trim(),
+            mode: "concept-explainer",
+            context: { mode: "workspace", user_id: user.id, history: validHistory }
+          }),
+          signal: wsCtrl.signal
+        });
+        clearTimeout(wsTimeout);
+        if (mindAiRes.ok) {
+          const json = await mindAiRes.json();
+          if (json.ok && typeof json.text === "string" && json.text.trim()) {
+            return res.json({ text: redactSensitiveData(json.text), provider: json.provider || "mind-ai", model: json.model });
+          }
+        }
+        console.warn("[WORKSPACE] MIND-AI unavailable, falling back to Gemini.");
+      } catch (mindAiErr: any) {
+        console.warn("[WORKSPACE] MIND-AI error, falling back to Gemini:", mindAiErr.message);
+      }
+    }
+
+    // Gemini fallback
+    const { GoogleGenAI } = await import("@google/genai");
+    const genAI = new GoogleGenAI({ apiKey });
+
+    const geminiContents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
+    geminiContents.push({ role: "user", parts: [{ text: `[System]: ${systemPrompt}` }] });
+    geminiContents.push({ role: "model", parts: [{ text: "Understood. I am ready to help." }] });
+    for (const turn of validHistory) {
+      geminiContents.push({
+        role: turn.role === "user" ? "user" : "model",
+        parts: [{ text: turn.content }]
+      });
+    }
+    geminiContents.push({ role: "user", parts: [{ text: message.trim().slice(0, 30000) }] });
+
+    const result = await genAI.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: geminiContents,
+      config: { temperature: 0.7, maxOutputTokens: 8192, topP: 0.95 }
+    });
+
+    const text = result.text || "";
+    if (!text.trim()) {
+      return res.status(502).json({ error: "AI returned an empty response. Please try again." });
+    }
+
+    return res.json({ text: redactSensitiveData(text), provider: "gemini", model: "gemini-2.5-flash" });
+  } catch (err: any) {
+    console.error("[WORKSPACE CHAT] Error:", err.message);
+    if (String(err?.message).includes("GEMINI_API_KEY")) return res.status(503).json({ error: "AI provider not configured." });
+    if (String(err?.message).toLowerCase().includes("quota") || String(err?.message).toLowerCase().includes("rate")) {
+      return res.status(429).json({ error: "AI rate limit reached. Please wait a moment." });
+    }
+    return res.status(500).json({ error: "AI Workspace error. Please try again." });
+  }
+});
+
 // Setup Vite or Production Static Serving
 async function startServer() {
 

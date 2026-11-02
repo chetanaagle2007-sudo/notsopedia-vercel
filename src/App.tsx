@@ -36,6 +36,7 @@ import { SettingsModal } from "./components/common/SettingsModal";
 // AI Workspace & Tutor Components
 import { AITutorWorkspace } from "./components/ai-tutor/AITutorWorkspace";
 import { AIWorkspaceModal } from "./components/workspace/AIWorkspaceModal";
+import { AIWorkspaceV2 } from "./components/workspace/AIWorkspaceV2";
 import { getAIChatHistoryStorageKey, parseAIChatHistory } from "./utils/aiChatHistory";
 
 // Admin Components
@@ -55,7 +56,7 @@ const createWelcomeAIChatMessage = (): AIChatMessage => ({
 
 function NotsopediaApp() {
   // Navigation & View State
-  const [activeTab, setActiveTab] = useState<"dashboard" | "explorer" | "ai-tutor" | "admin-portal">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "explorer" | "ai-tutor" | "admin-portal" | "ai-workspace-v2">("dashboard");
   const [userNotes, setUserNotes] = useState<UserNote[]>([]);
   const [likedNoteIds, setLikedNoteIds] = useState<Set<string>>(() => new Set());
   const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(() => new Set());
@@ -113,7 +114,8 @@ function NotsopediaApp() {
     } catch {
       setCurrentAuthToken(null);
     }
-    setShowAIWorkspaceModal(true);
+    // Navigate to AI Workspace 2.0 full-screen page
+    setActiveTab("ai-workspace-v2");
   };
 
   const handleOpenQuizFromDashboard = async (note: UserNote, difficulty: "easy" | "medium" | "hard" = "medium", count: number = 5) => {
@@ -1351,6 +1353,26 @@ ${note.content || "No text content was provided."}
         {/* Main Content Area */}
         <main className="flex-1 min-w-0 p-4 md:p-8 space-y-8">
           {/* TAB 0: STUDENT LEARNING DASHBOARD */}
+          {/* AI WORKSPACE 2.0 - Full-screen AI chat page */}
+          {activeTab === "ai-workspace-v2" && (
+            <div className="fixed inset-0 top-0 left-0 z-50 bg-white dark:bg-slate-950">
+              <AIWorkspaceV2
+                userId={signedInUser?.id ?? null}
+                authToken={currentAuthToken}
+                theme={theme}
+                onToggleTheme={toggleTheme}
+              />
+              <button
+                type="button"
+                onClick={() => setActiveTab("dashboard")}
+                className="absolute top-3 right-4 z-60 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold transition shadow-sm"
+                aria-label="Exit AI Workspace and return to dashboard"
+              >
+                Back to Notsopedia
+              </button>
+            </div>
+          )}
+
           {activeTab === "dashboard" && (
             <StudentDashboard
               userNotes={userNotes}

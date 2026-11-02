@@ -16,8 +16,8 @@ import { UniversalSubject } from "../../data";
 import { UI_LABELS } from "../../constants/labels";
 
 interface AppSidebarProps {
-  activeTab: "dashboard" | "explorer" | "ai-tutor" | "admin-portal";
-  setActiveTab: (tab: "dashboard" | "explorer" | "ai-tutor" | "admin-portal") => void;
+  activeTab: "dashboard" | "explorer" | "ai-tutor" | "admin-portal" | "ai-workspace-v2";
+  setActiveTab: (tab: "dashboard" | "explorer" | "ai-tutor" | "admin-portal" | "ai-workspace-v2") => void;
   subjects: UniversalSubject[];
   selectedSubjectFilter: string;
   onSelectSubject: (subject: string) => void;
@@ -48,7 +48,7 @@ export function AppSidebar({
   onOpenCollections,
   onOpenAIWorkspace
 }: AppSidebarProps) {
-  const handleNavClick = (tab: "dashboard" | "explorer" | "ai-tutor" | "admin-portal") => {
+  const handleNavClick = (tab: "dashboard" | "explorer" | "ai-tutor" | "admin-portal" | "ai-workspace-v2") => {
     setActiveTab(tab);
     onCloseMobile();
   };
