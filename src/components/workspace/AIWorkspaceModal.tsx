@@ -47,6 +47,11 @@ import {
   Shield
 } from "lucide-react";
 import { UserNote } from "../../types";
+import {
+  getAIWorkspaceChatHistoryStorageKey,
+  parseAIWorkspaceChatHistory
+} from "../../utils/aiChatHistory";
+import type { AIWorkspaceChatMessage } from "../../utils/aiChatHistory";
 
 export interface AIWorkspaceModalProps {
   isOpen: boolean;
@@ -54,6 +59,7 @@ export interface AIWorkspaceModalProps {
   selectedNote?: UserNote | null;
   userNotes?: UserNote[];
   authToken?: string | null;
+  userId?: string | null;
 }
 
 export type WorkspaceTool =
@@ -103,8 +109,12 @@ export function AIWorkspaceModal({
   onClose,
   selectedNote,
   userNotes = [],
-  authToken
+  authToken,
+  userId
 }: AIWorkspaceModalProps) {
+  const chatHistoryOwnerRef = useRef<string | null>(userId ?? null);
+  chatHistoryOwnerRef.current = userId ?? null;
+
   // Navigation & Shell State
   const [activeTool, setActiveTool] = useState<WorkspaceTool>(() => {
     try {
@@ -132,10 +142,48 @@ export function AIWorkspaceModal({
 
   // General Chat state
   const [chatInput, setChatInput] = useState("");
-  const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([
+  const [chatMessages, setChatMessages] = useState<AIWorkspaceChatMessage[]>([
     { role: "assistant", content: "Hello! I am your MIND-AI assistant. Ask me questions, explore study topics, or launch specialized autonomous tasks from the sidebar." }
   ]);
+  const [chatHistoryUserId, setChatHistoryUserId] = useState<string | null>(null);
   const [isChatSending, setIsChatSending] = useState(false);
+
+  useEffect(() => {
+    if (!userId) {
+      setChatHistoryUserId(null);
+      setChatMessages([
+        { role: "assistant", content: "Hello! I am your MIND-AI assistant. Ask me questions, explore study topics, or launch specialized autonomous tasks from the sidebar." }
+      ]);
+      return;
+    }
+
+    setChatHistoryUserId(null);
+    try {
+      const savedHistory = parseAIWorkspaceChatHistory(
+        localStorage.getItem(getAIWorkspaceChatHistoryStorageKey(userId))
+      );
+      setChatMessages(savedHistory ?? [
+        { role: "assistant", content: "Hello! I am your MIND-AI assistant. Ask me questions, explore study topics, or launch specialized autonomous tasks from the sidebar." }
+      ]);
+    } catch (error) {
+      console.warn("Unable to restore AI Workspace chat history:", error);
+      setChatMessages([]);
+    }
+    setChatHistoryUserId(userId);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId || chatHistoryUserId !== userId) return;
+
+    try {
+      localStorage.setItem(
+        getAIWorkspaceChatHistoryStorageKey(userId),
+        JSON.stringify(chatMessages.slice(-100))
+      );
+    } catch (error) {
+      console.warn("Unable to save AI Workspace chat history:", error);
+    }
+  }, [chatHistoryUserId, chatMessages, userId]);
 
   // Email Assistant state (all fields independently editable)
   const [emailTo, setEmailTo] = useState("");
@@ -488,7 +536,7 @@ export function AIWorkspaceModal({
     setIsGeneratingDoc(true);
     setError(null);
     try {
-      const res = await fetch("/api/mind-ai/universal-task", {
+      const res = await fetch("/api/ai/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
         body: JSON.stringify({
@@ -700,6 +748,7 @@ export function AIWorkspaceModal({
   const handleSendChat = async () => {
     if (!chatInput.trim() || isChatSending) return;
     const userMsg = chatInput.trim();
+    const requestUserId = userId ?? null;
     setChatInput("");
     setChatMessages((prev) => [...prev, { role: "user", content: userMsg }]);
     setIsChatSending(true);
@@ -708,16 +757,25 @@ export function AIWorkspaceModal({
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
         body: JSON.stringify({
-          goal: userMsg,
-          category: "research",
-          parameters: selectedNote ? { note_context: selectedNote.content } : {}
+          question: userMsg,
+          mode: "concept-explainer",
+          history: chatMessages.slice(-10),
+          noteIds: selectedNote?.id ? [selectedNote.id] : []
         })
       });
       const data = await res.json();
-      const reply = data.final_response || data.message || "Request completed.";
-      setChatMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+      if (chatHistoryOwnerRef.current !== requestUserId) return;
+      if (!res.ok) {
+        throw new Error(data.error || `AI request failed (HTTP ${res.status}).`);
+      }
+      if (typeof data.text !== "string" || !data.text.trim()) {
+        throw new Error("AI service returned an invalid response.");
+      }
+      setChatMessages((prev) => [...prev, { role: "assistant", content: data.text }]);
     } catch (err: any) {
-      setChatMessages((prev) => [...prev, { role: "assistant", content: `Error: ${err.message}` }]);
+      if (chatHistoryOwnerRef.current === requestUserId) {
+        setChatMessages((prev) => [...prev, { role: "assistant", content: `Error: ${err.message}` }]);
+      }
     } finally {
       setIsChatSending(false);
     }

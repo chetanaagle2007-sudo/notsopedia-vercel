@@ -42,6 +42,15 @@ const mockSupabaseServer = http.createServer((req, res) => {
   const url = req.url || "";
   const authHeader = req.headers["authorization"] || "";
 
+  if (authHeader === "Bearer ownership-test-token" && url.startsWith("/auth/v1/user")) {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({
+      id: "usr-student-42",
+      email: "student42@university.edu",
+      user_metadata: { role: "Student", institution: "Engineering College" }
+    }));
+  }
+
   if (!authHeader.startsWith("Bearer valid-student-token") && !authHeader.startsWith("Bearer other-student-token")) {
     res.writeHead(401, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({ error: "Invalid token" }));
@@ -101,6 +110,7 @@ let lastMindAiUrl: string | null = null;
 let lastMindAiPayload: any = null;
 let lastMindAiHeaders: http.IncomingHttpHeaders | null = null;
 let mockMindAiStatusCode = 200;
+let cancellationRequests = 0;
 
 const mockMindAiServer = http.createServer((req, res) => {
   let rawBody = "";
@@ -162,6 +172,19 @@ const mockMindAiServer = http.createServer((req, res) => {
           ]
         })
       );
+    }
+
+    if (req.url === "/tasks/task-to-cancel" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ task_id: "task-to-cancel", owner_id: "usr-student-42" }));
+    }
+    if (req.url === "/tasks/task-owned-by-other" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ task_id: "task-owned-by-other", owner_id: "usr-other-99" }));
+    }
+    if (req.url === "/tasks/task-without-owner" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ task_id: "task-without-owner", status: "completed" }));
     }
 
     // Handle get specific task details
@@ -255,10 +278,17 @@ const mockMindAiServer = http.createServer((req, res) => {
     }
 
     if (req.url?.startsWith("/artifacts") && req.method === "GET") {
+      const ownerId = new URL(req.url, "http://localhost").searchParams.get("owner_id");
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify({
-        artifacts: [{ id: "art-1", type: "presentation_pptx", file_name: "lecture.pptx" }],
-        count: 1
+        artifacts: ownerId === "usr-student-42"
+          ? [
+            { id: "art-3", type: "presentation_pptx", file_name: "lecture.pptx" },
+            { id: "art-1", type: "presentation_pptx", file_name: "quantum_mechanics.pptx" },
+            { id: "art-2", type: "study_plan", file_name: "study_plan_7day.md" }
+            ]
+          : [],
+        count: ownerId === "usr-student-42" ? 3 : 0
       }));
     }
 
@@ -302,11 +332,17 @@ const mockMindAiServer = http.createServer((req, res) => {
     }
 
     if (req.url === "/tasks/task-to-cancel/cancel" && req.method === "POST") {
+      cancellationRequests++;
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify({
         task_id: "task-to-cancel",
         cancelled: true
       }));
+    }
+    if (req.url === "/tasks/task-owned-by-other/cancel" && req.method === "POST") {
+      cancellationRequests++;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ task_id: "task-owned-by-other", cancelled: true }));
     }
 
     // Handle presentation endpoints
@@ -513,6 +549,16 @@ await test("7. GET /api/mind-ai/tasks/:id rejects unauthorized access by differe
   assert.ok(res.body.error.includes("not authorized"));
 });
 
+await test("7a. GET /api/mind-ai/tasks/:id rejects tasks without verified ownership", async () => {
+  const res = await requestApp(
+    "GET",
+    "/api/mind-ai/tasks/task-without-owner",
+    undefined,
+    { Authorization: "Bearer ownership-test-token" }
+  );
+  assert.strictEqual(res.status, 403);
+});
+
 await test("8. GET /api/mind-ai/artifacts/:type/:id/download proxies artifact stream", async () => {
   const res = await requestApp(
     "GET",
@@ -523,6 +569,28 @@ await test("8. GET /api/mind-ai/artifacts/:type/:id/download proxies artifact st
   assert.strictEqual(res.status, 200);
   assert.ok(res.headers["content-type"]?.includes("presentationml"));
   assert.strictEqual(res.body, "PK-MOCK-PPTX-BYTES-CONTENT");
+});
+
+await test("8a. Artifact downloads reject artifacts not listed for the authenticated user", async () => {
+  const res = await requestApp(
+    "GET",
+    "/api/mind-ai/artifacts/presentation/private-file/download",
+    undefined,
+    { Authorization: "Bearer ownership-test-token" }
+  );
+  assert.strictEqual(res.status, 403);
+  assert.ok(res.body.error.includes("not authorized"));
+  assert.strictEqual(lastMindAiUrl, "/artifacts?owner_id=usr-student-42");
+});
+
+await test("8b. Artifact downloads reject an owned artifact requested as a different type", async () => {
+  const res = await requestApp(
+    "GET",
+    "/api/mind-ai/artifacts/project/quantum_mechanics/download",
+    undefined,
+    { Authorization: "Bearer ownership-test-token" }
+  );
+  assert.strictEqual(res.status, 403);
 });
 
 await test("9. Upstream service authentication rejection yields 502 Bad Gateway", async () => {
@@ -667,6 +735,19 @@ await test("16. POST /api/mind-ai/tasks/:id/cancel cancels task with student aut
   assert.strictEqual(cancelRes.body.cancelled, true);
 });
 
+await test("16a. POST /api/mind-ai/tasks/:id/cancel rejects another user's task", async () => {
+  const requestsBefore = cancellationRequests;
+  const cancelRes = await requestApp(
+    "POST",
+    "/api/mind-ai/tasks/task-owned-by-other/cancel",
+    undefined,
+    { Authorization: "Bearer ownership-test-token" }
+  );
+  assert.strictEqual(cancelRes.status, 403);
+  assert.ok(cancelRes.body.error.includes("not authorized"));
+  assert.strictEqual(cancellationRequests, requestsBefore);
+});
+
 await test("17. GET /api/mind-ai/artifacts returns student artifact library", async () => {
   const artRes = await requestApp(
     "GET",
@@ -675,7 +756,7 @@ await test("17. GET /api/mind-ai/artifacts returns student artifact library", as
     { Authorization: "Bearer valid-student-token" }
   );
   assert.strictEqual(artRes.status, 200);
-  assert.strictEqual(artRes.body.count, 1);
+  assert.strictEqual(artRes.body.count, 3);
   assert.strictEqual(artRes.body.artifacts[0].file_name, "lecture.pptx");
 });
 

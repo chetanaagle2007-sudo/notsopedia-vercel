@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { UNIVERSAL_SUBJECTS, UniversalSubject } from "./data";
 import { UserNote, SignedInUser, SystemConfig, AIMode, AIChatMessage, NoteSortOption } from "./types";
 
@@ -36,6 +36,7 @@ import { SettingsModal } from "./components/common/SettingsModal";
 // AI Workspace & Tutor Components
 import { AITutorWorkspace } from "./components/ai-tutor/AITutorWorkspace";
 import { AIWorkspaceModal } from "./components/workspace/AIWorkspaceModal";
+import { getAIChatHistoryStorageKey, parseAIChatHistory } from "./utils/aiChatHistory";
 
 // Admin Components
 import { AdminPortal } from "./components/admin/AdminPortal";
@@ -45,6 +46,12 @@ import { NoteEditModal } from "./components/admin/NoteEditModal";
 import { AuthModal } from "./components/auth/AuthModal";
 import { AuthFlowPage } from "./components/auth/AuthFlowPage";
 import { supabase } from "./supabase";
+
+const createWelcomeAIChatMessage = (): AIChatMessage => ({
+  sender: "ai",
+  text: "👋 Welcome to Notsopedia AI Tutor! Ask questions, explore lecture summaries, or synthesize peer study notes directly. How can I help with your studies today?",
+  timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+});
 
 function NotsopediaApp() {
   // Navigation & View State
@@ -188,18 +195,52 @@ function NotsopediaApp() {
 
   // User Session
   const [signedInUser, setSignedInUser] = useState<SignedInUser | null>(null);
+  const aiChatHistoryOwnerRef = useRef<string | null>(null);
+  aiChatHistoryOwnerRef.current = signedInUser?.id ?? null;
 
   // AI Assistant State
   const [aiQuestion, setAiQuestion] = useState<string>("");
   const [aiMode, setAiMode] = useState<AIMode>("news-gk");
   const [aiChatHistory, setAiChatHistory] = useState<AIChatMessage[]>([
-    {
-      sender: "ai",
-      text: "👋 Welcome to Notsopedia AI Tutor! Ask questions, explore lecture summaries, or synthesize peer study notes directly. How can I help with your studies today?",
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    }
+    createWelcomeAIChatMessage()
   ]);
+  const [aiChatHistoryUserId, setAiChatHistoryUserId] = useState<string | null>(null);
   const [isAiResponding, setIsAiResponding] = useState<boolean>(false);
+
+  useEffect(() => {
+    const userId = signedInUser?.id;
+    if (!userId) {
+      setAiChatHistoryUserId(null);
+      setAiChatHistory([]);
+      return;
+    }
+
+    setAiChatHistoryUserId(null);
+    try {
+      const savedHistory = parseAIChatHistory(
+        localStorage.getItem(getAIChatHistoryStorageKey(userId))
+      );
+      setAiChatHistory(savedHistory ?? [createWelcomeAIChatMessage()]);
+    } catch (error) {
+      console.warn("Unable to restore AI chat history:", error);
+      setAiChatHistory([]);
+    }
+    setAiChatHistoryUserId(userId);
+  }, [signedInUser?.id]);
+
+  useEffect(() => {
+    const userId = signedInUser?.id;
+    if (!userId || aiChatHistoryUserId !== userId) return;
+
+    try {
+      localStorage.setItem(
+        getAIChatHistoryStorageKey(userId),
+        JSON.stringify(aiChatHistory.slice(-100))
+      );
+    } catch (error) {
+      console.warn("Unable to save AI chat history:", error);
+    }
+  }, [aiChatHistory, aiChatHistoryUserId, signedInUser?.id]);
 
   // System Configuration
   const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
@@ -251,10 +292,13 @@ function NotsopediaApp() {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
         setSignedInUser(null);
+        setCurrentAuthToken(null);
+        setShowAIWorkspaceModal(false);
         setLikedNoteIds(new Set());
         return;
       }
 
+      setCurrentAuthToken(session.access_token || null);
       void loadSignedInUser(session.user.id, session.user.email, session.user.user_metadata);
     });
 
@@ -699,9 +743,12 @@ function NotsopediaApp() {
 
     if (!session?.user) {
       setSignedInUser(null);
+      setCurrentAuthToken(null);
+      setShowAIWorkspaceModal(false);
       return;
     }
 
+    setCurrentAuthToken(session.access_token || null);
     await loadSignedInUser(
       session.user.id,
       session.user.email,
@@ -725,6 +772,8 @@ function NotsopediaApp() {
     }
 
     setSignedInUser(null);
+    setCurrentAuthToken(null);
+    setShowAIWorkspaceModal(false);
     setLikedNoteIds(new Set());
     setActiveTab('explorer');
     showToast("Session disconnected. Now browsing in Guest mode.", "success");
@@ -758,6 +807,7 @@ function NotsopediaApp() {
     if (!promptToSend.trim()) return;
 
     const userMsg = promptToSend.trim();
+    const requestUserId = signedInUser?.id ?? null;
     setAiQuestion("");
     setIsAiResponding(true);
 
@@ -795,12 +845,17 @@ function NotsopediaApp() {
         body: JSON.stringify({
           question: userMsg,
           mode: aiMode,
-          noteContext: notesContextString
+          noteContext: notesContextString,
+          history: aiChatHistory.slice(-10).map((message) => ({
+            role: message.sender === "ai" ? "assistant" : "user",
+            content: message.text
+          }))
         })
       });
 
       if (res.ok) {
         const data = await res.json();
+        if (aiChatHistoryOwnerRef.current !== requestUserId) return;
         setAiChatHistory((prev) => [
           ...prev,
           {
@@ -821,6 +876,7 @@ function NotsopediaApp() {
           serverMessage = errData?.error || "";
         } catch { /* ignore JSON parse failure */ }
 
+        if (aiChatHistoryOwnerRef.current !== requestUserId) return;
         let errText = "";
         if (res.status === 401) {
           errText = "**Sign-in required.** Please sign in to your Notsopedia account to use the AI Tutor.";
@@ -847,14 +903,16 @@ function NotsopediaApp() {
       }
     } catch (err) {
       console.error("AI Assistant error:", err);
-      setAiChatHistory((prev) => [
-        ...prev,
-        {
-          sender: "ai",
-          text: "**Connection failed.** Could not reach the Notsopedia server. Please check your internet connection and try again.",
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-        }
-      ]);
+      if (aiChatHistoryOwnerRef.current === requestUserId) {
+        setAiChatHistory((prev) => [
+          ...prev,
+          {
+            sender: "ai",
+            text: "**Connection failed.** Could not reach the Notsopedia server. Please check your internet connection and try again.",
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          }
+        ]);
+      }
     } finally {
       setIsAiResponding(false);
     }
@@ -1764,6 +1822,7 @@ ${note.content || "No text content was provided."}
         selectedNote={activeWorkspaceNote}
         userNotes={userNotes}
         authToken={currentAuthToken}
+        userId={signedInUser?.id ?? null}
       />
     </div>
   );
