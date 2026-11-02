@@ -308,7 +308,7 @@ await test("13. Valid X-Autonomous-Maintenance-Key authorizes M2M maintenance re
   assert.ok(res.body.report.runId.startsWith("maint-"));
 });
 
-await test("12. Valid Bearer token matching AUTONOMOUS_MAINTENANCE_KEY also authorizes M2M caller", async () => {
+await test("14. Valid Bearer token matching AUTONOMOUS_MAINTENANCE_KEY also authorizes M2M caller", async () => {
   const res = await requestApp("POST", "/api/admin/autonomous/daily-maintenance", { force: true }, {
     Authorization: `Bearer ${TEST_M2M_SECRET}`
   });
@@ -319,7 +319,7 @@ await test("12. Valid Bearer token matching AUTONOMOUS_MAINTENANCE_KEY also auth
 // --- Suite 3: Maintenance Lifecycle & Reporting ---
 console.log("\n--- Suite 3: Maintenance Lifecycle, Idempotency & Failure Gating ---");
 
-await test("13. Maintenance cycle returns comprehensive structured report", async () => {
+await test("15. Maintenance cycle returns comprehensive structured report", async () => {
   const res = await requestApp("POST", "/api/admin/autonomous/daily-maintenance", { force: true }, {
     "X-Autonomous-Maintenance-Key": TEST_M2M_SECRET
   });
@@ -338,7 +338,7 @@ await test("13. Maintenance cycle returns comprehensive structured report", asyn
   assert.ok(typeof report.manualInterventionRequired === "boolean");
 });
 
-await test("14. Concurrency guard prevents duplicate overlapping execution", async () => {
+await test("16. Concurrency guard prevents duplicate overlapping execution", async () => {
   const engine = new AutonomousEngine();
 
   // Simulate long-running maintenance
@@ -354,16 +354,21 @@ await test("14. Concurrency guard prevents duplicate overlapping execution", asy
   }
 });
 
-await test("15. Force flag overrides concurrent lock in emergency re-run", async () => {
+await test("17. Force flag cannot bypass the concurrent execution lock", async () => {
   const engine = new AutonomousEngine();
   (engine as any).isMaintenanceRunning = true;
 
-  const res = await engine.runDailyMaintenanceCycle({ force: true });
-  assert.strictEqual(res.success, true);
-  assert.ok(res.report.runId);
+  try {
+    await engine.runDailyMaintenanceCycle({ force: true });
+    assert.fail("Force must not bypass the concurrent execution lock");
+  } catch (err: any) {
+    assert.ok(err.message.includes("currently in progress"));
+  } finally {
+    (engine as any).isMaintenanceRunning = false;
+  }
 });
 
-await test("16. High-risk incident stops maintenance cycle in AWAITING_APPROVAL with manual intervention flag", async () => {
+await test("18. High-risk incident stops maintenance cycle in AWAITING_APPROVAL with manual intervention flag", async () => {
   const engine = new AutonomousEngine();
 
   // Register a high-risk incident
@@ -387,7 +392,7 @@ await test("16. High-risk incident stops maintenance cycle in AWAITING_APPROVAL 
 // --- Suite 4: State Persistence Across Restarts ---
 console.log("\n--- Suite 4: Incident & Audit State Persistence Across Restarts ---");
 
-await test("17. Engine persists state to disk and loads on fresh instantiation", () => {
+await test("19. Engine persists state to disk and loads on fresh instantiation", () => {
   const engine1 = new AutonomousEngine();
   const testId = `inc-persist-test-${Date.now()}`;
   engine1.recordIncident({
