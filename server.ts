@@ -160,6 +160,29 @@ const createRequestSupabase = (req: import('express').Request) => {
   });
 };
 
+async function isServerAdminUser(user: any, requestSupabase: NonNullable<ReturnType<typeof createRequestSupabase>>) {
+  const adminEmails = (process.env.ADMIN_EMAILS || "chetanaagle2007@gmail.com")
+    .split(",")
+    .map((email) => email.trim().toLowerCase());
+
+  if (adminEmails.includes((user.email || "").toLowerCase())) {
+    return true;
+  }
+
+  const { data: adminProfile, error } = await requestSupabase
+    .from("users")
+    .select("is_admin")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Admin verification lookup failed:", error);
+    return false;
+  }
+
+  return Boolean(adminProfile?.is_admin);
+}
+
 // ----------------- API ENDPOINTS -----------------
 
 // 1. GET ALL NOTES (Supabase)
@@ -832,6 +855,12 @@ app.post("/api/system/config", async (req, res) => {
       });
     }
 
+    if (!(await isServerAdminUser(user, requestSupabase))) {
+      return res.status(403).json({
+        error: "Only administrators can update system configuration."
+      });
+    }
+
     const currentLocal = readConfigFromFile();
 
     const updated = {
@@ -933,6 +962,12 @@ app.post("/api/notes/reset", async (req, res) => {
       console.error("Supabase authentication failed:", authError);
       return res.status(401).json({
         error: "Your Supabase session is invalid or expired. Please sign in again."
+      });
+    }
+
+    if (!(await isServerAdminUser(user, requestSupabase))) {
+      return res.status(403).json({
+        error: "Only administrators can reset the notes database."
       });
     }
 
@@ -2271,8 +2306,11 @@ app.get("/api/mind-ai/tasks/:id", async (req, res) => {
       }
 
       const task = await mindAiRes.json();
-      if (task.owner_id && task.owner_id !== user.id && !user.user_metadata?.isAdmin) {
-        return res.status(403).json({ error: "You are not authorized to view this task." });
+      if (task.owner_id && task.owner_id !== user.id) {
+        const isAdmin = await isServerAdminUser(user, requestSupabase);
+        if (!isAdmin) {
+          return res.status(403).json({ error: "You are not authorized to view this task." });
+        }
       }
 
       return res.json(task);
@@ -2510,8 +2548,7 @@ app.get("/api/mind-ai/admin/overview", async (req, res) => {
     const { data: { user } } = await requestSupabase.auth.getUser();
     if (!user) return res.status(401).json({ error: "Authentication is required." });
 
-    const adminEmails = (process.env.ADMIN_EMAILS || "chetanaagle2007@gmail.com").split(",").map(e => e.trim().toLowerCase());
-    const isServerAdmin = adminEmails.includes((user.email || "").toLowerCase()) || user.user_metadata?.isAdmin === true;
+    const isServerAdmin = await isServerAdminUser(user, requestSupabase);
     if (!isServerAdmin) {
       return res.status(403).json({ error: "Administrator privileges required. Verified server-side." });
     }
@@ -2588,23 +2625,9 @@ async function verifyAdminUser(req: express.Request): Promise<{ user: any; error
     return { user: null, error: "Authentication is required.", status: 401 };
   }
 
-  const adminEmails = (process.env.ADMIN_EMAILS || "chetanaagle2007@gmail.com").split(",").map(e => e.trim().toLowerCase());
-  const isEmailAdmin = adminEmails.includes((user.email || "").toLowerCase()) || user.user_metadata?.isAdmin === true;
-  if (isEmailAdmin) {
+  if (await isServerAdminUser(user, requestSupabase)) {
     return { user };
   }
-
-  try {
-    const { data: adminProfile } = await requestSupabase
-      .from("users")
-      .select("is_admin")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (adminProfile?.is_admin) {
-      return { user };
-    }
-  } catch {}
 
   return { user: null, error: "Administrator privileges are required.", status: 403 };
 }
@@ -3171,4 +3194,3 @@ export {
   redactSensitiveData
 };
 export default app;
-

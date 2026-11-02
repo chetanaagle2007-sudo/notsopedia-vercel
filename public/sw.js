@@ -13,8 +13,7 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
   );
-  // Activate immediately so new assets are picked up right away
-  self.skipWaiting();
+  // Wait for user confirmation before replacing the active worker.
 });
 
 self.addEventListener("activate", (event) => {

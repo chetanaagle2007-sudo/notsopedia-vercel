@@ -40,6 +40,23 @@ const mockSupabaseServer = http.createServer((req, res) => {
   const url = req.url || "";
   const authHeader = req.headers["authorization"] || "";
 
+  if (authHeader === "Bearer test-user-metadata-admin-token") {
+    if (url.startsWith("/auth/v1/user")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(
+        JSON.stringify({
+          id: "usr-metadata-admin-3",
+          email: "student-metadata-admin@university.edu",
+          user_metadata: { isAdmin: true, role: "Student" }
+        })
+      );
+    }
+    if (url.startsWith("/rest/v1/users")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ is_admin: false }));
+    }
+  }
+
   if (authHeader === "Bearer admin-jwt-token") {
     if (url.startsWith("/auth/v1/user")) {
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -79,6 +96,27 @@ const mockSupabaseServer = http.createServer((req, res) => {
   res.end(JSON.stringify({ error: "Not found" }));
 });
 
+const mockMindAiServer = http.createServer((req, res) => {
+  if (req.url?.startsWith("/tasks/")) {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ id: "foreign-task", owner_id: "different-user" }));
+  }
+  if (req.url === "/admin/overview") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ users: ["private-admin-data"] }));
+  }
+  res.writeHead(404, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: "Not found" }));
+});
+
+let mindAiPort = 0;
+await new Promise<void>((resolve) => {
+  mockMindAiServer.listen(0, "127.0.0.1", () => {
+    mindAiPort = (mockMindAiServer.address() as any).port;
+    resolve();
+  });
+});
+
 let supabasePort = 0;
 await new Promise<void>((resolve) => {
   mockSupabaseServer.listen(0, "127.0.0.1", () => {
@@ -93,6 +131,8 @@ process.env.SUPABASE_URL = `http://127.0.0.1:${supabasePort}`;
 process.env.SUPABASE_PUBLISHABLE_KEY = "test-pub-key";
 process.env.ADMIN_EMAILS = "chetanaagle2007@gmail.com";
 process.env.AUTONOMOUS_MAINTENANCE_KEY = TEST_M2M_SECRET;
+process.env.MIND_AI_SERVICE_URL = `http://127.0.0.1:${mindAiPort}`;
+process.env.MIND_AI_SERVICE_KEY = "test-mind-ai-service-key";
 process.env.VERCEL = "1";
 
 // Import server app and engine
@@ -218,7 +258,47 @@ await test("7. Non-admin student user JWT is rejected with HTTP 403", async () =
   assert.strictEqual(res.body.error, "Administrator privileges are required.");
 });
 
-await test("8. Valid X-Autonomous-Maintenance-Key authorizes M2M maintenance request with HTTP 200", async () => {
+await test("8. User-editable isAdmin metadata does not authorize maintenance", async () => {
+  const res = await requestApp("POST", "/api/admin/autonomous/daily-maintenance", {}, {
+    Authorization: "Bearer test-user-metadata-admin-token"
+  });
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(res.body.error, "Administrator privileges are required.");
+});
+
+await test("9. User-editable isAdmin metadata cannot access another user's task", async () => {
+  const res = await requestApp("GET", "/api/mind-ai/tasks/foreign-task", undefined, {
+    Authorization: "Bearer test-user-metadata-admin-token"
+  });
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(res.body.error, "You are not authorized to view this task.");
+});
+
+await test("10. User-editable isAdmin metadata cannot access the admin overview", async () => {
+  const res = await requestApp("GET", "/api/mind-ai/admin/overview", undefined, {
+    Authorization: "Bearer test-user-metadata-admin-token"
+  });
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(res.body.error, "Administrator privileges required. Verified server-side.");
+});
+
+await test("11. Non-admin cannot update system configuration through API", async () => {
+  const res = await requestApp("POST", "/api/system/config", { announcement: "Unauthorized edit" }, {
+    Authorization: "Bearer test-user-metadata-admin-token"
+  });
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(res.body.error, "Only administrators can update system configuration.");
+});
+
+await test("12. Non-admin cannot reset notes through API", async () => {
+  const res = await requestApp("POST", "/api/notes/reset", {}, {
+    Authorization: "Bearer test-user-metadata-admin-token"
+  });
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(res.body.error, "Only administrators can reset the notes database.");
+});
+
+await test("13. Valid X-Autonomous-Maintenance-Key authorizes M2M maintenance request with HTTP 200", async () => {
   const res = await requestApp("POST", "/api/admin/autonomous/daily-maintenance", {}, {
     "X-Autonomous-Maintenance-Key": TEST_M2M_SECRET
   });
@@ -228,7 +308,7 @@ await test("8. Valid X-Autonomous-Maintenance-Key authorizes M2M maintenance req
   assert.ok(res.body.report.runId.startsWith("maint-"));
 });
 
-await test("9. Valid Bearer token matching AUTONOMOUS_MAINTENANCE_KEY also authorizes M2M caller", async () => {
+await test("12. Valid Bearer token matching AUTONOMOUS_MAINTENANCE_KEY also authorizes M2M caller", async () => {
   const res = await requestApp("POST", "/api/admin/autonomous/daily-maintenance", { force: true }, {
     Authorization: `Bearer ${TEST_M2M_SECRET}`
   });
@@ -239,7 +319,7 @@ await test("9. Valid Bearer token matching AUTONOMOUS_MAINTENANCE_KEY also autho
 // --- Suite 3: Maintenance Lifecycle & Reporting ---
 console.log("\n--- Suite 3: Maintenance Lifecycle, Idempotency & Failure Gating ---");
 
-await test("10. Maintenance cycle returns comprehensive structured report", async () => {
+await test("13. Maintenance cycle returns comprehensive structured report", async () => {
   const res = await requestApp("POST", "/api/admin/autonomous/daily-maintenance", { force: true }, {
     "X-Autonomous-Maintenance-Key": TEST_M2M_SECRET
   });
@@ -258,7 +338,7 @@ await test("10. Maintenance cycle returns comprehensive structured report", asyn
   assert.ok(typeof report.manualInterventionRequired === "boolean");
 });
 
-await test("11. Concurrency guard prevents duplicate overlapping execution", async () => {
+await test("14. Concurrency guard prevents duplicate overlapping execution", async () => {
   const engine = new AutonomousEngine();
 
   // Simulate long-running maintenance
@@ -274,7 +354,7 @@ await test("11. Concurrency guard prevents duplicate overlapping execution", asy
   }
 });
 
-await test("12. Force flag overrides concurrent lock in emergency re-run", async () => {
+await test("15. Force flag overrides concurrent lock in emergency re-run", async () => {
   const engine = new AutonomousEngine();
   (engine as any).isMaintenanceRunning = true;
 
@@ -283,7 +363,7 @@ await test("12. Force flag overrides concurrent lock in emergency re-run", async
   assert.ok(res.report.runId);
 });
 
-await test("13. High-risk incident stops maintenance cycle in AWAITING_APPROVAL with manual intervention flag", async () => {
+await test("16. High-risk incident stops maintenance cycle in AWAITING_APPROVAL with manual intervention flag", async () => {
   const engine = new AutonomousEngine();
 
   // Register a high-risk incident
@@ -307,7 +387,7 @@ await test("13. High-risk incident stops maintenance cycle in AWAITING_APPROVAL 
 // --- Suite 4: State Persistence Across Restarts ---
 console.log("\n--- Suite 4: Incident & Audit State Persistence Across Restarts ---");
 
-await test("14. Engine persists state to disk and loads on fresh instantiation", () => {
+await test("17. Engine persists state to disk and loads on fresh instantiation", () => {
   const engine1 = new AutonomousEngine();
   const testId = `inc-persist-test-${Date.now()}`;
   engine1.recordIncident({
@@ -331,6 +411,7 @@ await test("14. Engine persists state to disk and loads on fresh instantiation",
 // Teardown
 testServer.close();
 mockSupabaseServer.close();
+mockMindAiServer.close();
 
 console.log("\n══════════════════════════════════════════════════════════════");
 console.log(`  SCHEDULED MAINTENANCE SUITE COMPLETE: ${passed} passed, ${failed} failed`);
