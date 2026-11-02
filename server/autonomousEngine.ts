@@ -841,7 +841,7 @@ export class AutonomousEngine {
     success: boolean;
     report: MaintenanceCycleReport;
   }> {
-    if (this.isMaintenanceRunning && !options?.force) {
+    if (this.isMaintenanceRunning) {
       throw new Error("A maintenance cycle is currently in progress. Concurrent execution rejected.");
     }
 

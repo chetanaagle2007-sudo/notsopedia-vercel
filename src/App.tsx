@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { UNIVERSAL_SUBJECTS, UniversalSubject } from "./data";
 import { UserNote, SignedInUser, SystemConfig, AIMode, AIChatMessage, NoteSortOption } from "./types";
 
@@ -36,6 +36,7 @@ import { SettingsModal } from "./components/common/SettingsModal";
 // AI Workspace & Tutor Components
 import { AITutorWorkspace } from "./components/ai-tutor/AITutorWorkspace";
 import { AIWorkspaceModal } from "./components/workspace/AIWorkspaceModal";
+import { getAIChatHistoryStorageKey, parseAIChatHistory } from "./utils/aiChatHistory";
 
 // Admin Components
 import { AdminPortal } from "./components/admin/AdminPortal";
@@ -45,6 +46,12 @@ import { NoteEditModal } from "./components/admin/NoteEditModal";
 import { AuthModal } from "./components/auth/AuthModal";
 import { AuthFlowPage } from "./components/auth/AuthFlowPage";
 import { supabase } from "./supabase";
+
+const createWelcomeAIChatMessage = (): AIChatMessage => ({
+  sender: "ai",
+  text: "👋 Welcome to Notsopedia AI Tutor! Ask questions, explore lecture summaries, or synthesize peer study notes directly. How can I help with your studies today?",
+  timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+});
 
 function NotsopediaApp() {
   // Navigation & View State
@@ -188,18 +195,52 @@ function NotsopediaApp() {
 
   // User Session
   const [signedInUser, setSignedInUser] = useState<SignedInUser | null>(null);
+  const aiChatHistoryOwnerRef = useRef<string | null>(null);
+  aiChatHistoryOwnerRef.current = signedInUser?.id ?? null;
 
   // AI Assistant State
   const [aiQuestion, setAiQuestion] = useState<string>("");
   const [aiMode, setAiMode] = useState<AIMode>("news-gk");
   const [aiChatHistory, setAiChatHistory] = useState<AIChatMessage[]>([
-    {
-      sender: "ai",
-      text: "👋 Welcome to Notsopedia AI Tutor! Ask questions, explore lecture summaries, or synthesize peer study notes directly. How can I help with your studies today?",
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    }
+    createWelcomeAIChatMessage()
   ]);
+  const [aiChatHistoryUserId, setAiChatHistoryUserId] = useState<string | null>(null);
   const [isAiResponding, setIsAiResponding] = useState<boolean>(false);
+
+  useEffect(() => {
+    const userId = signedInUser?.id;
+    if (!userId) {
+      setAiChatHistoryUserId(null);
+      setAiChatHistory([]);
+      return;
+    }
+
+    setAiChatHistoryUserId(null);
+    try {
+      const savedHistory = parseAIChatHistory(
+        localStorage.getItem(getAIChatHistoryStorageKey(userId))
+      );
+      setAiChatHistory(savedHistory ?? [createWelcomeAIChatMessage()]);
+    } catch (error) {
+      console.warn("Unable to restore AI chat history:", error);
+      setAiChatHistory([]);
+    }
+    setAiChatHistoryUserId(userId);
+  }, [signedInUser?.id]);
+
+  useEffect(() => {
+    const userId = signedInUser?.id;
+    if (!userId || aiChatHistoryUserId !== userId) return;
+
+    try {
+      localStorage.setItem(
+        getAIChatHistoryStorageKey(userId),
+        JSON.stringify(aiChatHistory.slice(-100))
+      );
+    } catch (error) {
+      console.warn("Unable to save AI chat history:", error);
+    }
+  }, [aiChatHistory, aiChatHistoryUserId, signedInUser?.id]);
 
   // System Configuration
   const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
@@ -251,10 +292,13 @@ function NotsopediaApp() {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
         setSignedInUser(null);
+        setCurrentAuthToken(null);
+        setShowAIWorkspaceModal(false);
         setLikedNoteIds(new Set());
         return;
       }
 
+      setCurrentAuthToken(session.access_token || null);
       void loadSignedInUser(session.user.id, session.user.email, session.user.user_metadata);
     });
 
@@ -699,9 +743,12 @@ function NotsopediaApp() {
 
     if (!session?.user) {
       setSignedInUser(null);
+      setCurrentAuthToken(null);
+      setShowAIWorkspaceModal(false);
       return;
     }
 
+    setCurrentAuthToken(session.access_token || null);
     await loadSignedInUser(
       session.user.id,
       session.user.email,
@@ -725,6 +772,8 @@ function NotsopediaApp() {
     }
 
     setSignedInUser(null);
+    setCurrentAuthToken(null);
+    setShowAIWorkspaceModal(false);
     setLikedNoteIds(new Set());
     setActiveTab('explorer');
     showToast("Session disconnected. Now browsing in Guest mode.", "success");
@@ -758,6 +807,7 @@ function NotsopediaApp() {
     if (!promptToSend.trim()) return;
 
     const userMsg = promptToSend.trim();
+    const requestUserId = signedInUser?.id ?? null;
     setAiQuestion("");
     setIsAiResponding(true);
 
@@ -795,12 +845,17 @@ function NotsopediaApp() {
         body: JSON.stringify({
           question: userMsg,
           mode: aiMode,
-          noteContext: notesContextString
+          noteContext: notesContextString,
+          history: aiChatHistory.slice(-10).map((message) => ({
+            role: message.sender === "ai" ? "assistant" : "user",
+            content: message.text
+          }))
         })
       });
 
       if (res.ok) {
         const data = await res.json();
+        if (aiChatHistoryOwnerRef.current !== requestUserId) return;
         setAiChatHistory((prev) => [
           ...prev,
           {
@@ -821,6 +876,7 @@ function NotsopediaApp() {
           serverMessage = errData?.error || "";
         } catch { /* ignore JSON parse failure */ }
 
+        if (aiChatHistoryOwnerRef.current !== requestUserId) return;
         let errText = "";
         if (res.status === 401) {
           errText = "**Sign-in required.** Please sign in to your Notsopedia account to use the AI Tutor.";
@@ -847,14 +903,16 @@ function NotsopediaApp() {
       }
     } catch (err) {
       console.error("AI Assistant error:", err);
-      setAiChatHistory((prev) => [
-        ...prev,
-        {
-          sender: "ai",
-          text: "**Connection failed.** Could not reach the Notsopedia server. Please check your internet connection and try again.",
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-        }
-      ]);
+      if (aiChatHistoryOwnerRef.current === requestUserId) {
+        setAiChatHistory((prev) => [
+          ...prev,
+          {
+            sender: "ai",
+            text: "**Connection failed.** Could not reach the Notsopedia server. Please check your internet connection and try again.",
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          }
+        ]);
+      }
     } finally {
       setIsAiResponding(false);
     }
@@ -979,312 +1037,8 @@ function NotsopediaApp() {
   const handleDownloadPPTX = async () => {
     setIsGeneratingPPTX(true);
     try {
-      const pptxModule = await import("pptxgenjs");
-      let pptxConstructor: any = pptxModule.default || pptxModule;
-
-      if (!pptxConstructor) {
-        throw new Error("PowerPoint library failed to load.");
-      }
-
-      if (typeof pptxConstructor !== "function" && pptxConstructor.default) {
-        pptxConstructor = pptxConstructor.default;
-      }
-
-      const pres = new pptxConstructor();
-      pres.layout = "LAYOUT_16X9";
-      pres.author = "Notsopedia";
-      pres.subject = "Notsopedia Study Notes";
-      pres.title = "Notsopedia Study Notes";
-      pres.company = "Notsopedia";
-      pres.lang = "en-US";
-
-      const addFooter = (slide: any, pageNumber: number) => {
-        slide.addShape("line", {
-          x: 0.65,
-          y: 7.05,
-          w: 12.0,
-          h: 0,
-          line: { color: "CBD5E1", width: 0.7 }
-        });
-
-        slide.addText(`NOTSOPEDIA  |  ${pageNumber}`, {
-          x: 10.4,
-          y: 7.12,
-          w: 2.2,
-          h: 0.22,
-          fontFace: "Arial",
-          fontSize: 8,
-          color: "64748B",
-          align: "right",
-          margin: 0
-        });
-      };
-
-      let slideNumber = 1;
-
-      // Cover slide
-      const cover = pres.addSlide();
-      cover.background = { color: "F8FAFC" };
-
-      cover.addShape("rect", {
-        x: 0,
-        y: 0,
-        w: 13.33,
-        h: 0.48,
-        fill: { color: "0F172A" },
-        line: { color: "0F172A" }
-      });
-
-      cover.addText("NOTSOPEDIA", {
-        x: 0.9,
-        y: 1.7,
-        w: 11.5,
-        h: 0.65,
-        fontFace: "Georgia",
-        fontSize: 34,
-        bold: true,
-        italic: true,
-        color: "0F172A",
-        align: "center",
-        margin: 0
-      });
-
-      cover.addText("STUDY NOTEBOOK", {
-        x: 0.9,
-        y: 2.45,
-        w: 11.5,
-        h: 0.45,
-        fontFace: "Arial",
-        fontSize: 18,
-        bold: true,
-        color: "475569",
-        align: "center",
-        margin: 0
-      });
-
-      cover.addText("Collaborative Academic Notes & Learning Material", {
-        x: 1.0,
-        y: 3.15,
-        w: 11.3,
-        h: 0.4,
-        fontFace: "Arial",
-        fontSize: 14,
-        color: "64748B",
-        align: "center",
-        margin: 0
-      });
-
-      cover.addShape("line", {
-        x: 4.15,
-        y: 4.05,
-        w: 5.0,
-        h: 0,
-        line: { color: "0F172A", width: 1.5 }
-      });
-
-      cover.addText(`Exported on ${new Date().toLocaleDateString()}`, {
-        x: 1.0,
-        y: 4.45,
-        w: 11.3,
-        h: 0.35,
-        fontFace: "Courier New",
-        fontSize: 11,
-        color: "0F172A",
-        bold: true,
-        align: "center",
-        margin: 0
-      });
-
-      cover.addText(`${userNotes.length} study note${userNotes.length === 1 ? "" : "s"} included`, {
-        x: 1.0,
-        y: 4.9,
-        w: 11.3,
-        h: 0.35,
-        fontFace: "Arial",
-        fontSize: 11,
-        color: "64748B",
-        align: "center",
-        margin: 0
-      });
-
-      cover.addShape("rect", {
-        x: 0,
-        y: 7.0,
-        w: 13.33,
-        h: 0.5,
-        fill: { color: "0F172A" },
-        line: { color: "0F172A" }
-      });
-
-      addFooter(cover, slideNumber++);
-
-      if (userNotes.length === 0) {
-        const emptySlide = pres.addSlide();
-        emptySlide.addText("No study notes available", {
-          x: 1,
-          y: 3,
-          w: 11.3,
-          h: 0.6,
-          fontFace: "Georgia",
-          fontSize: 24,
-          bold: true,
-          align: "center",
-          color: "0F172A"
-        });
-        addFooter(emptySlide, slideNumber++);
-      }
-
-      // One or more slides per note
-      userNotes.forEach((note, noteIndex) => {
-        const safeTitle = note.title?.trim() || "Untitled Study Note";
-        const subject = note.subjectName?.trim() || "General Academic";
-        const subjectCode = note.subjectCode?.trim() || "GEN-ACAD";
-        const topic = note.topicName?.trim() || "General Topic";
-        const uploader = note.uploaderName?.trim() || "Unknown";
-        const role = note.uploaderRole?.trim() || "Student";
-        const uploadedDate = note.uploadedAt
-          ? new Date(note.uploadedAt).toLocaleDateString()
-          : "Unknown date";
-
-        const metadata = [
-          `Subject: ${subject}`,
-          `Code: ${subjectCode}`,
-          `Topic: ${topic}`,
-          `Author: ${uploader}`,
-          `Role: ${role}`,
-          `Uploaded: ${uploadedDate}`
-        ];
-
-        if (note.language?.trim()) {
-          metadata.push(`Language: ${note.language.trim()}`);
-        }
-
-        if (note.sourceType?.trim()) {
-          metadata.push(`Source: ${note.sourceType.trim()}`);
-        }
-
-        if (note.tags?.length) {
-          metadata.push(`Tags: ${note.tags.join(", ")}`);
-        }
-
-        const rawContent = (note.content || "").trim();
-        const cleanContent = rawContent
-          .replace(/\r\n/g, "\n")
-          .replace(/\r/g, "\n");
-
-        const maxCharsPerContentSlide = 2600;
-        const contentParts: string[] = [];
-
-        if (!cleanContent) {
-          contentParts.push("No text content was provided for this note.");
-        } else {
-          for (let i = 0; i < cleanContent.length; i += maxCharsPerContentSlide) {
-            contentParts.push(cleanContent.slice(i, i + maxCharsPerContentSlide));
-          }
-        }
-
-        contentParts.forEach((contentPart, partIndex) => {
-          const slide = pres.addSlide();
-          slide.background = { color: "FFFFFF" };
-
-          slide.addShape("rect", {
-            x: 0,
-            y: 0,
-            w: 13.33,
-            h: 0.16,
-            fill: { color: "0F172A" },
-            line: { color: "0F172A" }
-          });
-
-          slide.addText(
-            partIndex === 0
-              ? `NOTE ${noteIndex + 1}  |  ${topic.toUpperCase()}`
-              : `NOTE ${noteIndex + 1}  |  CONTINUED`,
-            {
-              x: 0.7,
-              y: 0.38,
-              w: 11.9,
-              h: 0.28,
-              fontFace: "Courier New",
-              fontSize: 9,
-              bold: true,
-              color: "64748B",
-              margin: 0
-            }
-          );
-
-          slide.addText(safeTitle, {
-            x: 0.7,
-            y: 0.72,
-            w: 11.9,
-            h: 0.65,
-            fontFace: "Georgia",
-            fontSize: 21,
-            bold: true,
-            color: "0F172A",
-            margin: 0,
-            breakLine: false,
-            fit: "shrink"
-          });
-
-          slide.addShape("line", {
-            x: 0.7,
-            y: 1.42,
-            w: 11.9,
-            h: 0,
-            line: { color: "0F172A", width: 1.2 }
-          });
-
-          if (partIndex === 0) {
-            slide.addText(metadata.join("\n"), {
-              x: 0.7,
-              y: 1.62,
-              w: 3.45,
-              h: 2.65,
-              fontFace: "Arial",
-              fontSize: 9.5,
-              color: "334155",
-              fill: { color: "F1F5F9" },
-              margin: 0.16,
-              breakLine: false,
-              fit: "shrink"
-            });
-
-            slide.addText(contentPart, {
-              x: 4.45,
-              y: 1.62,
-              w: 8.15,
-              h: 5.12,
-              fontFace: "Arial",
-              fontSize: 12,
-              color: "1E293B",
-              valign: "top",
-              margin: 0.08,
-              breakLine: false,
-              fit: "shrink",
-              paraSpaceAfterPt: 7
-            });
-          } else {
-            slide.addText(contentPart, {
-              x: 0.7,
-              y: 1.68,
-              w: 11.9,
-              h: 5.05,
-              fontFace: "Arial",
-              fontSize: 12,
-              color: "1E293B",
-              valign: "top",
-              margin: 0.08,
-              breakLine: false,
-              fit: "shrink",
-              paraSpaceAfterPt: 7
-            });
-          }
-
-          addFooter(slide, slideNumber++);
-        });
-      });
-
+      const { createStudyNotesPresentation } = await import("./utils/studyNotesPptx");
+      const pres = await createStudyNotesPresentation(userNotes);
       await pres.writeFile({
         fileName: `Notsopedia_Study_Notes_${Date.now()}.pptx`
       });
@@ -1302,6 +1056,7 @@ function NotsopediaApp() {
       setIsGeneratingPPTX(false);
     }
   };
+
   // Download Note: original file or Markdown
   const handleDownloadNoteMarkdown = async (note: UserNote) => {
     if (note.fileUrl && note.fileName) {
@@ -2067,6 +1822,7 @@ ${note.content || "No text content was provided."}
         selectedNote={activeWorkspaceNote}
         userNotes={userNotes}
         authToken={currentAuthToken}
+        userId={signedInUser?.id ?? null}
       />
     </div>
   );

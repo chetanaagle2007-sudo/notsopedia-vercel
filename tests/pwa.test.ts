@@ -6,8 +6,11 @@ function assert(condition: boolean, message: string) {
     console.error(`  ❌ FAIL: ${message}`);
     throw new Error(message);
   }
+  passed++;
   console.log(`  ✅ PASS  ${message}`);
 }
+
+let passed = 0;
 
 console.log('\n──────────────────────────────────────────────────────────────');
 console.log('PHASE 1 UNIT TESTS: PWA Lifecycle & Service Worker Verification');
@@ -22,6 +25,8 @@ assert(swContent.includes('self.addEventListener("install"'), 'sw.js contains in
 assert(swContent.includes('self.addEventListener("activate"'), 'sw.js contains activate event listener');
 assert(swContent.includes('self.addEventListener("message"'), 'sw.js contains message listener for SKIP_WAITING');
 assert(swContent.includes('self.addEventListener("fetch"'), 'sw.js contains fetch event listener');
+const installHandler = swContent.split('self.addEventListener("install"')[1]?.split('self.addEventListener("activate"')[0] || "";
+assert(!installHandler.includes("self.skipWaiting()"), 'new service worker waits for user confirmation before activation');
 
 // Test 2: Caching policies verification
 assert(swContent.includes('url.pathname.startsWith("/api/")'), 'sw.js explicitly bypasses /api/* requests from caching');
@@ -44,5 +49,5 @@ assert(mainContent.includes('controllerchange'), 'main.tsx listens for controlle
 assert(mainContent.includes('SKIP_WAITING'), 'main.tsx sends SKIP_WAITING to waiting worker upon user confirmation');
 
 console.log('\n══════════════════════════════════════════════════════════════');
-console.log('  ALL PWA LIFECYCLE TESTS COMPLETED: 11 passed, 0 failed');
+console.log(`  ALL PWA LIFECYCLE TESTS COMPLETED: ${passed} passed, 0 failed`);
 console.log('══════════════════════════════════════════════════════════════\n');
