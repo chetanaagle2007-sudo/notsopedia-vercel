@@ -3244,6 +3244,32 @@ app.post("/api/mind-ai/workflows/:id/approve/:stepId", async (req, res) => {
 
 
 
+
+// ─── AI Workspace Rate Limiter (in-memory, per-user) ────────────────────────
+const _wsRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const WS_RATE_LIMIT_MAX = 20;     // max requests per window
+const WS_RATE_LIMIT_WINDOW = 60000; // 1 minute
+
+function checkWorkspaceRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const entry = _wsRateLimitMap.get(userId);
+  if (!entry || now > entry.resetAt) {
+    _wsRateLimitMap.set(userId, { count: 1, resetAt: now + WS_RATE_LIMIT_WINDOW });
+    return true;
+  }
+  if (entry.count >= WS_RATE_LIMIT_MAX) return false;
+  entry.count++;
+  return true;
+}
+
+// Periodically clean up expired rate limit entries (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of _wsRateLimitMap) {
+    if (now > val.resetAt) _wsRateLimitMap.delete(key);
+  }
+}, 5 * 60 * 1000);
+
 // =============================================================================
 // AI WORKSPACE 2.0 — General-purpose AI Chat Endpoint (separate from AI Tutor)
 // =============================================================================
@@ -3263,6 +3289,11 @@ app.post("/api/workspace/chat", async (req, res) => {
     const { data: { user }, error: userError } = await requestSupabase.auth.getUser();
     if (userError || !user) {
       return res.status(401).json({ error: "Authentication is required to use AI Workspace." });
+    }
+
+    // Rate limiting per authenticated user
+    if (!checkWorkspaceRateLimit(user.id)) {
+      return res.status(429).json({ error: "Too many requests. Please wait a moment before sending another message." });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
@@ -3352,11 +3383,17 @@ app.post("/api/workspace/chat", async (req, res) => {
     }
     geminiContents.push({ role: "user", parts: [{ text: message.trim().slice(0, 30000) }] });
 
-    const result = await genAI.models.generateContent({
+    // Gemini call with 30-second timeout
+    const geminiPromise = genAI.models.generateContent({
       model: "gemini-2.5-flash",
       contents: geminiContents,
       config: { temperature: 0.7, maxOutputTokens: 8192, topP: 0.95 }
     });
+
+    const geminiTimeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("AI response timed out. Please try again.")), 30000)
+    );
+    const result = await Promise.race([geminiPromise, geminiTimeoutPromise]);
 
     const text = result.text || "";
     if (!text.trim()) {
